@@ -33,7 +33,7 @@ These tools take a source file, usually a human-readable file with its own flavo
 <?btxt filename="test.lang" mode="overwrite" ?>
 ```python
 print("hello world!")
-````
+\```
 ```
 
 The example above shows how you attach betwixt properties to code blocks. Notice the `filename` property. This tells betwixt what file to write the contents of this block to.
