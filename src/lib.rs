@@ -241,17 +241,23 @@ impl<'a> Document<'a> {
             }
             next = scan(input, false, parsers);
         }
-        section_frame[section.part.level]
+		section_frame[section.part.level]
             .as_mut()
             .unwrap()
             .children
             .push(section);
-		for opt in section_frame {
-			if opt.is_some() {
-				return Document{
-					code_blocks: blocks,
-					root: opt.unwrap()
-				};
+		for idx in (0..10).rev() {
+			if section_frame[idx].is_some() {
+				let mut child = None;
+				mem::swap(&mut section_frame[idx], &mut child);
+				let child = child.unwrap();
+				match section_frame[child.part.level].as_mut() {
+					Some(parent) => parent.children.push(child),
+					None => return Document{
+						code_blocks: blocks,
+						root: child,
+					}
+				}
 			}
 		}
 		panic!("unreachable");
@@ -434,6 +440,9 @@ where
     }
 }
 
+// FIXME currently we just indicate that we don't match if a betwixt section contains invalid
+// properties or extra characters. We should indicate instead failure and let the strict mode
+// configuration determine what that means.
 fn properties(i: &[u8]) -> IResult<&[u8], Properties> {
     let fname = property(FILENAME_PROP);
     let tag = property(TAG_PROP);
