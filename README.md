@@ -11,18 +11,6 @@ Betwixt is heavily inspired by the literate programming features of Emacs Org Mo
 
 Betwixt extracts code segments from README files (currently, only github flavor is supported, but broader support is planned) and _tangles_ them into various source files as configured, allowing them to be built and executed as a part of the CI/CD pipeline, causing failure if the documentation is out of date, or simply allowing entire programs to be written in a format primarily suitable for human consumption, instead of the opposite.
 
-### Wait, Tangles?
-
-`Tangle` is a fancy word for writing out all the different code segments in the documentation into the appropriate places in source files. The opposite is _untangled_, which is the documentation. This word comes from [literate programming](http://www.literateprogramming.com/) jargon.
-
-### Why not just X Language's documentation tests?
-
-A lot of modern languages, and even some older ones, support embedding tests inside doc strings or other comments in the source code. This is a great system, however I find myself using them infrequently. Each language is a little (or even a lot) different from the last, and getting all engineers to use embedded documentation in some languages is harder than others. If documentation tests in your language are working for you, then don't let me stop you. 
-
-### Why not just Emacs Org Mode?
-
-The primary problem with Org Mode is that it only runs in emacs. And even with support for things like emacs batch mode, its not very portable. Its difficult to get a team of developers to all use it. Markdown, though, is ubiquitous. Almost every editor has support for it, most version control UI's (e.g. this one) have support for rendering... But there are not many options for turning markdown into a literate programming tool.
-
 ## Installation
 
 At the moment, the only way to install `betwixt` is from source. As it gets more mature, it may get put in `crates.io` or a couple different distrobution package repositories. 
@@ -106,3 +94,20 @@ Ultimately, I want betwixt to have the following features before I will consider
  - [ ] The ability to execute code blocks by tag or id and put the results in the MD file (a la org-babel)
  - [ ] Extension of above, interpolation to allow execution of one block to be input or variable to another block (a la org-babel). This will likely be more simplistic than OB's version.
  
+### Wait, Tangles?
+
+`Tangle` is a fancy word for writing out all the different code segments in the documentation into the appropriate places in source files. The opposite is _untangled_, which is the documentation. This word comes from [literate programming](http://www.literateprogramming.com/) jargon.
+
+### Why not just X Language's documentation tests?
+
+A lot of modern languages, and even some older ones, support embedding tests inside doc strings or other comments in the source code. This is a great system, however I find myself using them infrequently. Each language is a little (or even a lot) different from the last, and getting all engineers to use embedded documentation in some languages is harder than others. If documentation tests in your language are working for you, then don't let me stop you. 
+
+I also feel like they primarly fill a different need. They are necessary and great for technical documentation on how to use the API of a library. But they are perhaps not great for getting started guides, guides that are _not_ about the language (but perhaps about its REST API), or anything where you can't expect the user to understand the language of the source itself, but still want to ensure up to date documentation. 
+
+### Why not just Emacs Org Mode?
+
+The primary problem with Org Mode is that it only runs in emacs. And even with support for things like emacs batch mode, its not very portable. Its difficult to get a team of developers to all use it. Markdown, though, is ubiquitous. Almost every editor has support for it, most version control UI's (e.g. this one) have support for rendering... But there are not many options for turning markdown into a literate programming tool.
+
+## Contributing
+
+Feel free to create an issue with any feedback. At the moment, things are so early stage I'm not super willing to just open the floodgates to direct contribution -- nor would I expect anyone would want to dive into this (albeit small) codebase right now. 
