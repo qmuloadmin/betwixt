@@ -23,7 +23,7 @@ To use betwixt, you will first need a markdown file. This one, for instance, is 
 
 ### Configuring Code Segments
 
-Betwixt configuration is accomplished using markdown comments of a certain format. You can set properties, which will be applied to ~all following~ code blocks, until overwritten by other, more specific or more recent blocks. Below is a _global_ block, which just means it applies to code blocks of all languages, by default.
+Betwixt configuration is accomplished using markdown comments of a certain format. You can set properties, which will be applied to _all following_ code blocks, until overwritten by other, more specific or more recent blocks. Below is a _global_ block, which just means it applies to code blocks of all languages, by default.
 
 ```btxt
 <?btxt filename='test.py' ?>
