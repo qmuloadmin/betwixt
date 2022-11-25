@@ -1,4 +1,4 @@
-<?btxt+btxt tag='skip' ?>
+<?btxt+btxt ignore=true ?>
 # Betwixt
 
 Simple, markdown-based, polyglot literate programming and documentation tests. 
@@ -19,7 +19,7 @@ Betwixt is built in rust. You will need to [install rust](https://www.rust-lang.
 
 ## Usage 
 
-To use betwixt, you will first need a markdown file. This one, for instance, is just fine. Then, you'll need to add betwixt configuration commands to your file. This file already has a few, so you can safely use it for demonstration purposes. 
+To use betwixt, you will first need a markdown file. The one you're reading now is just fine. Then, you'll need to add betwixt configuration commands to your file. This file already has a few, so you can safely use it for demonstration purposes.
 
 ### Configuring Code Segments
 
@@ -29,9 +29,9 @@ Betwixt configuration is accomplished using markdown comments of a certain forma
 <?btxt filename='test.py' ?>
 ```
 
-This is going to configure betwixt to copy all code segments of all languages into a file called "test.py". You may use either single quotes `'` or double quotes `"` for property values. 
+This is going to configure betwixt to copy all code segments of all languages into a file called "test.py". You may use either single quotes `'` or double quotes `"` for property values. You may also use three pipe operators (`|||`) if you need to embed code in a property.
 
-You can also configure properties that only apply to code blocks of a certain language. 
+You can also configure properties that only apply to code blocks of a certain language.
 
 ```btxt
 <?btxt+python filename='test.py' ?>
@@ -73,15 +73,15 @@ fmt.Println("Hello, Betwixt!")
 
 ### Tangling Markdown
 
-To tangle, or render the individual files from the core markdown document, you just need to provide the markdown filename, and a destination output directory. You can use this README as the source.
+To tangle you just need to provide the markdown filename, and a destination output directory. You can use this README as the source.
 
 `betwixt README.md -o /tmp/`
 
-If you run the above command in the root of this repository, you can then see a complete, albeit painfully simple, go program in `/tmp/main.go`. If you have go installed, you can executed it with `go run /tmp/main.go`
+If you run the above command in the root of this repository, you can then see a complete (albeit painfully simple) go program in `/tmp/main.go`. If you have go installed, you can execute it with `go run /tmp/main.go`
 
 ## State and Plans
 
-Betwixt is still very, very early. It does technically work, but it is going to be very rough around the edges, with unhelpful crash error messages in the case of a misconfigured markdown source. It'll also likely have a few fundamental bugs, and maybe even (*gasp*) some bad design decisions. Use at your own risk at the moment.
+Betwixt is still very, painfully premature. It does technically work, but it is going to be very rough around the edges, with unhelpful crash error messages in the case of a misconfigured markdown source. It'll also likely have a few fundamental bugs, and maybe even (*gasp*) some bad design decisions. Use at your own risk at the moment.
 
 Ultimately, I want betwixt to have the following features before I will consider it complete:
 
@@ -102,11 +102,11 @@ Ultimately, I want betwixt to have the following features before I will consider
 
 A lot of modern languages, and even some older ones, support embedding tests inside doc strings or other comments in the source code. This is a great system, however I find myself using them infrequently. Each language is a little (or even a lot) different from the last, and getting all engineers to use embedded documentation in some languages is harder than others. If documentation tests in your language are working for you, then don't let me stop you. 
 
-I also feel like they primarly fill a different need. They are necessary and great for technical documentation on how to use the API of a library. But they are perhaps not great for getting started guides, guides that are _not_ about the language (but perhaps about its REST API), or anything where you can't expect the user to understand the language of the source itself, but still want to ensure up to date documentation. 
+I also feel like they primarly fill a different need. They are necessary and great for technical documentation on how to use the API of a library. But they are perhaps not great for tutorials, guides that are _not_ about the program or service itself (but perhaps about its REST API), or anything where you can't expect the user to understand the language of the source itself, but still want to ensure up to date documentation.
 
 ### Why not just Emacs Org Mode?
 
-The primary problem with Org Mode is that it only runs in emacs. And even with support for things like emacs batch mode, its not very portable. Its difficult to get a team of developers to all use it. Markdown, though, is ubiquitous. Almost every editor has support for it, most version control UI's (e.g. this one) have support for rendering... But there are not many options for turning markdown into a literate programming tool.
+The primary problem with Org Mode is that it only runs in emacs. And even with support for things like emacs batch mode, its not very portable. Its difficult to get a team of developers to all use it. Markdown, though, is ubiquitous. Almost every editor has support for it, most version control UIs (like this one) have support for rendering... But there are not many options for turning markdown into a literate programming tool.
 
 ## Contributing
 

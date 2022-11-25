@@ -19,6 +19,7 @@ const FILENAME_PROP: &'static str = "filename";
 const TAG_PROP: &'static str = "tag";
 const CODE_PROP: &'static str = "code";
 const TANGLE_MODE_PROP: &'static str = "mode";
+const IGNORE_PROP: &'static str = "ignore";
 
 #[derive(Debug, Clone)]
 pub enum TangleMode<'a> {
@@ -53,41 +54,39 @@ impl<'a> Default for TangleMode<'a> {
 #[derive(Clone)]
 // TODO can we get rid of this Clone?
 struct PropertiesCollection<'a> {
-	global: Properties<'a>,
-	languages: HashMap<&'a[u8], Properties<'a>>
+    global: Properties<'a>,
+    languages: HashMap<&'a [u8], Properties<'a>>,
 }
 
 impl<'a> PropertiesCollection<'a> {
-	fn get_code_props(&self, lang: Option<&'a [u8]>) -> Properties<'a> {
-		match lang {
-			None => self.global.clone(),
-			Some(lang) => {
-				match self.languages.get(lang) {
-					None => self.global.clone(),
-					Some(lang_props) => {
-						let mut lang_props = lang_props.clone();
-						lang_props.merge(&self.global);
-						lang_props
-					}
-				}
-			}
-		}
-	}
-	
-	fn update(&mut self, lang: Option<&'a[u8]>, mut props: Properties<'a>) {
-		match lang {
-			Some(lang) => {
-				if self.languages.contains_key(lang) {
-					props.merge(self.languages.get(lang).unwrap());
-				}
-				self.languages.insert(lang, props);
-			},
-			None => {
-				props.merge(&self.global);
-				self.global = props;
-			},
-		}
-	}
+    fn get_code_props(&self, lang: Option<&'a [u8]>) -> Properties<'a> {
+        match lang {
+            None => self.global.clone(),
+            Some(lang) => match self.languages.get(lang) {
+                None => self.global.clone(),
+                Some(lang_props) => {
+                    let mut lang_props = lang_props.clone();
+                    lang_props.merge(&self.global);
+                    lang_props
+                }
+            },
+        }
+    }
+
+    fn update(&mut self, lang: Option<&'a [u8]>, mut props: Properties<'a>) {
+        match lang {
+            Some(lang) => {
+                if self.languages.contains_key(lang) {
+                    props.merge(self.languages.get(lang).unwrap());
+                }
+                self.languages.insert(lang, props);
+            }
+            None => {
+                props.merge(&self.global);
+                self.global = props;
+            }
+        }
+    }
 }
 
 #[derive(Default, Clone, Debug)]
@@ -95,16 +94,16 @@ pub struct Properties<'a> {
     pub filename: Option<&'a [u8]>,
     pub tag: Option<&'a [u8]>,
     pub mode: Option<TangleMode<'a>>,
-	// TODO there is an alternative where parsing properties with code
-	// simply returns a code block with the applied properties. At the moment,
-	// though, this is the solution that seems less hacky
-	code: Option<&'a [u8]>
+    pub ignore: Option<bool>,
+    // TODO there is an alternative where parsing properties with code
+    // simply returns a code block with the applied properties. At the moment,
+    // though, this is the solution that seems less hacky
+    code: Option<&'a [u8]>,
 }
 
 impl<'a> Properties<'a> {
-
-	fn merge(&mut self, other: &Properties<'a>) {
-		if self.filename.is_none() {
+    fn merge(&mut self, other: &Properties<'a>) {
+        if self.filename.is_none() {
             self.filename = other.filename;
         }
         if self.tag.is_none() {
@@ -112,8 +111,11 @@ impl<'a> Properties<'a> {
         }
         if self.mode.is_none() {
             self.mode = other.mode.clone();
-		}
-	}
+        }
+        if self.ignore.is_none() {
+            self.ignore = other.ignore;
+        }
+    }
 }
 
 pub struct Code<'a> {
@@ -128,35 +130,35 @@ pub struct CodePart<'a> {
 }
 
 pub struct SectionPart<'a> {
-	pub heading: Option<&'a [u8]>,
+    pub heading: Option<&'a [u8]>,
     pub level: usize,
 }
 
 pub struct Section<'a> {
-	pub part: SectionPart<'a>,
-	properties: PropertiesCollection<'a>,
+    pub part: SectionPart<'a>,
+    properties: PropertiesCollection<'a>,
     code_block_indexes: Vec<usize>,
     pub children: Vec<Section<'a>>,
 }
 
 impl<'a> Section<'a> {
-	fn new(part: SectionPart<'a>, properties: PropertiesCollection<'a>) -> Self {
-		Section{
-			part,
-			properties,
-			children: Vec::new(),
-			code_block_indexes: Vec::new(),
-		}
-	}
+    fn new(part: SectionPart<'a>, properties: PropertiesCollection<'a>) -> Self {
+        Section {
+            part,
+            properties,
+            children: Vec::new(),
+            code_block_indexes: Vec::new(),
+        }
+    }
 }
 
 pub struct Document<'a> {
-	pub code_blocks: Vec<Code<'a>>,
-    pub	root: Section<'a>
+    pub code_blocks: Vec<Code<'a>>,
+    pub root: Section<'a>,
 }
 
 impl<'a> Document<'a> {
-	pub fn from_contents<P1, P2, P3>(
+    pub fn from_contents<P1, P2, P3>(
         contents: &'a [u8],
         parsers: &mut MarkdownParsers<P1, P2, P3>,
     ) -> Self
@@ -166,18 +168,20 @@ impl<'a> Document<'a> {
         P3: CodeParser<'a>,
     {
         let mut next = scan(contents, true, parsers);
-        let properties = PropertiesCollection{
-			global: Properties{..Default::default()},
-			languages: HashMap::new(),
-		};
-		let mut blocks = Vec::new();
+        let properties = PropertiesCollection {
+            global: Properties {
+                ..Default::default()
+            },
+            languages: HashMap::new(),
+        };
+        let mut blocks = Vec::new();
         let mut section = Section {
-			part: SectionPart{
-				heading: None,
-				level: 0,
-			},
+            part: SectionPart {
+                heading: None,
+                level: 0,
+            },
             code_block_indexes: Vec::new(),
-			properties,
+            properties,
             children: Vec::new(),
         };
         // a given index in the stack is the current parent of that level.
@@ -189,7 +193,7 @@ impl<'a> Document<'a> {
                 ScanResult::Section(new) => {
                     if new.level == section.part.level {
                         // parent section isn't changing, just the active section is.
-						let props = section.properties.clone();
+                        let props = section.properties.clone();
                         section_frame[section.part.level]
                             .as_mut()
                             .unwrap()
@@ -214,72 +218,84 @@ impl<'a> Document<'a> {
                                 }
                             }
                         }
-						// all children lower (numerically higher) than the new section
-						// will never get a chance to be reconciled. We need to do so now.
-						for idx in (new.level+1..10).rev() {
-							if section_frame[idx].is_some() {
-								let mut child = None;
-								mem::swap(&mut section_frame[idx], &mut child);
-								let child = child.unwrap();
-								section_frame[child.part.level].as_mut().unwrap().children.push(child);
-							}
-						}
-						let idx = new.level;
-                        section = Section::new(new, section_frame[idx].as_ref().unwrap().properties.clone());
-                    } else { // going to a child section
-						let props = section.properties.clone();
+                        // all children lower (numerically higher) than the new section
+                        // will never get a chance to be reconciled. We need to do so now.
+                        for idx in (new.level + 1..10).rev() {
+                            if section_frame[idx].is_some() {
+                                let mut child = None;
+                                mem::swap(&mut section_frame[idx], &mut child);
+                                let child = child.unwrap();
+                                section_frame[child.part.level]
+                                    .as_mut()
+                                    .unwrap()
+                                    .children
+                                    .push(child);
+                            }
+                        }
+                        let idx = new.level;
+                        section = Section::new(
+                            new,
+                            section_frame[idx].as_ref().unwrap().properties.clone(),
+                        );
+                    } else {
+                        // going to a child section
+                        let props = section.properties.clone();
                         section_frame[new.level] = Some(section);
                         section = Section::new(new, props);
                     }
                 }
                 ScanResult::Code(code) => {
-					section.code_block_indexes.push(blocks.len());
-					let props = section.properties.get_code_props(code.lang);
-					blocks.push(Code{
-						properties: props,
-						part: code,
-					});
-				},
+                    let props = section.properties.get_code_props(code.lang);
+                    if !props.ignore.unwrap_or(false) {
+                        section.code_block_indexes.push(blocks.len());
+                        blocks.push(Code {
+                            properties: props,
+                            part: code,
+                        });
+                    }
+                }
                 ScanResult::Properties(props) => {
-					if let Some(code) = props.1.code {
-						section.code_block_indexes.push(blocks.len());
-						let lang = props.0;
-						section.properties.update(props.0, props.1);
-						let props = section.properties.get_code_props(lang);
-						blocks.push(Code{
-							part: CodePart{
-								lang: lang,
-								contents: code
-							},
-							properties: props
-						})
-					} else {
-						section.properties.update(props.0, props.1);
-					}
+                    if let Some(code) = props.1.code {
+                        section.code_block_indexes.push(blocks.len());
+                        let lang = props.0;
+                        section.properties.update(props.0, props.1);
+                        let props = section.properties.get_code_props(lang);
+                        blocks.push(Code {
+                            part: CodePart {
+                                lang: lang,
+                                contents: code,
+                            },
+                            properties: props,
+                        })
+                    } else {
+                        section.properties.update(props.0, props.1);
+                    }
                 }
             }
             next = scan(input, false, parsers);
         }
-		section_frame[section.part.level]
+        section_frame[section.part.level]
             .as_mut()
             .unwrap()
             .children
             .push(section);
-		for idx in (0..10).rev() {
-			if section_frame[idx].is_some() {
-				let mut child = None;
-				mem::swap(&mut section_frame[idx], &mut child);
-				let child = child.unwrap();
-				match section_frame[child.part.level].as_mut() {
-					Some(parent) => parent.children.push(child),
-					None => return Document{
-						code_blocks: blocks,
-						root: child,
-					}
-				}
-			}
-		}
-		panic!("unreachable");
+        for idx in (0..10).rev() {
+            if section_frame[idx].is_some() {
+                let mut child = None;
+                mem::swap(&mut section_frame[idx], &mut child);
+                let child = child.unwrap();
+                match section_frame[child.part.level].as_mut() {
+                    Some(parent) => parent.children.push(child),
+                    None => {
+                        return Document {
+                            code_blocks: blocks,
+                            root: child,
+                        }
+                    }
+                }
+            }
+        }
+        panic!("unreachable");
     }
 }
 
@@ -292,15 +308,22 @@ pub struct MarkdownParsers<P1, P2, P3> {
 enum ScanResult<'a> {
     Code(CodePart<'a>),
     Section(SectionPart<'a>),
-    Properties((Option<&'a[u8]>, Properties<'a>)),
+    Properties((Option<&'a [u8]>, Properties<'a>)),
 }
 
 pub fn betwixt<'a>(
     start: &'static str,
     end: &'static str,
-) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], (Option<&'a[u8]>, Properties)> {
+) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], (Option<&'a [u8]>, Properties)> {
     move |i: &[u8]| {
-        let (input, (lang, body)) = delimited(tag(start), pair(opt(preceded(tag("+"), take_while(is_alphanumeric))), take_until(end)), tag(end))(i)?;
+        let (input, (lang, body)) = delimited(
+            tag(start),
+            pair(
+                opt(preceded(tag("+"), take_while(is_alphanumeric))),
+                take_until(end),
+            ),
+            tag(end),
+        )(i)?;
         let properties = properties(body)?;
         Ok((input, (lang, properties.1)))
     }
@@ -309,7 +332,7 @@ pub fn betwixt<'a>(
 pub fn code<'a>(
     code_start: &'static str,
     code_end: &'static str,
-) -> impl Fn(&'a[u8]) -> IResult<&'a[u8], CodePart> {
+) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], CodePart> {
     move |i: &[u8]| {
         let (input, (_, lang, _, _)) = tuple((tag(code_start), opt(alpha1), space0, tag("\n")))(i)?;
         let mut terminator = locate_parser_match(tuple((tag(code_end), space0, newline)));
@@ -320,7 +343,7 @@ pub fn code<'a>(
             CodePart {
                 contents: &input[..end_idx],
                 lang,
-			},
+            },
         ))
     }
 }
@@ -347,8 +370,8 @@ where
 }
 
 // Parse out a section between header levels
-pub fn section<'a>(mark: char) -> impl Fn(&'a[u8]) -> IResult<&'a[u8], SectionPart> {
-    move |i: &'a[u8]| {
+pub fn section<'a>(mark: char) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], SectionPart> {
+    move |i: &'a [u8]| {
         let (input, (header, _, heading)) = tuple((
             take_while1(|c| c == mark as u8),
             take_while1(is_space),
@@ -364,16 +387,29 @@ pub fn section<'a>(mark: char) -> impl Fn(&'a[u8]) -> IResult<&'a[u8], SectionPa
     }
 }
 
-pub trait PropertiesParser<'a>: Parser<&'a [u8], (Option<&'a [u8]>, Properties<'a>), nom::error::Error<&'a [u8]>> {}
-impl<'a, T> PropertiesParser<'a> for T where T: Parser<&'a [u8], (Option<&'a [u8]>, Properties<'a>), nom::error::Error<&'a [u8]>> {}
-pub trait SectionParser<'a>: Parser<&'a [u8], SectionPart<'a>, nom::error::Error<&'a [u8]>> {}
-impl<'a, T> SectionParser<'a> for T where T: Parser<&'a [u8], SectionPart<'a>, nom::error::Error<&'a [u8]>> {}
+pub trait PropertiesParser<'a>:
+    Parser<&'a [u8], (Option<&'a [u8]>, Properties<'a>), nom::error::Error<&'a [u8]>>
+{
+}
+impl<'a, T> PropertiesParser<'a> for T where
+    T: Parser<&'a [u8], (Option<&'a [u8]>, Properties<'a>), nom::error::Error<&'a [u8]>>
+{
+}
+pub trait SectionParser<'a>:
+    Parser<&'a [u8], SectionPart<'a>, nom::error::Error<&'a [u8]>>
+{
+}
+impl<'a, T> SectionParser<'a> for T where
+    T: Parser<&'a [u8], SectionPart<'a>, nom::error::Error<&'a [u8]>>
+{
+}
 pub trait CodeParser<'a>: Parser<&'a [u8], CodePart<'a>, nom::error::Error<&'a [u8]>> {}
-impl<'a, T> CodeParser<'a> for T where T: Parser<&'a [u8], CodePart<'a>, nom::error::Error<&'a [u8]>> {}
+impl<'a, T> CodeParser<'a> for T where T: Parser<&'a [u8], CodePart<'a>, nom::error::Error<&'a [u8]>>
+{}
 
 fn scan<'a, P1, P2, P3>(
     i: &'a [u8],
-	first: bool,
+    first: bool,
     parsers: &mut MarkdownParsers<P1, P2, P3>,
 ) -> Option<(&'a [u8], ScanResult<'a>)>
 where
@@ -381,27 +417,27 @@ where
     P2: SectionParser<'a>,
     P3: CodeParser<'a>,
 {
-	let mut new_line = first;
+    let mut new_line = first;
     for idx in 0..i.input_len() {
-		if new_line {
-			// these parsers should only match on newlines, not mid-line
-			match parsers.code.parse(&i[idx..]) {
-				Ok(result) => return Some((result.0, ScanResult::Code(result.1))),
-				Err(_) => {} // continue
-			};
-			match parsers.section.parse(&i[idx..]) {
-				Ok(result) => return Some((result.0, ScanResult::Section(result.1))),
-				Err(_) => {} // continue
-			};
-			new_line = false;
-		}
+        if new_line {
+            // these parsers should only match on newlines, not mid-line
+            match parsers.code.parse(&i[idx..]) {
+                Ok(result) => return Some((result.0, ScanResult::Code(result.1))),
+                Err(_) => {} // continue
+            };
+            match parsers.section.parse(&i[idx..]) {
+                Ok(result) => return Some((result.0, ScanResult::Section(result.1))),
+                Err(_) => {} // continue
+            };
+            new_line = false;
+        }
         match parsers.betwixt.parse(&i[idx..]) {
             Ok(result) => return Some((result.0, ScanResult::Properties(result.1))),
             Err(_) => {} // continue
         }
-		if i[idx] == 10 {
-			new_line = true;
-		}
+        if i[idx] == 10 {
+            new_line = true;
+        }
     }
     None
 }
@@ -409,26 +445,48 @@ where
 fn property<'a>(t: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> {
     move |i: &[u8]| {
         let (input, _) = take_while(|c| is_space(c) || is_newline(c))(i)?;
-        let (input, quote) = preceded(tuple((tag(t), tag("="))), alt((tag("'"), tag("\""), tag("|||"))))(input)?;
+        let (input, quote) = preceded(
+            tuple((tag(t), tag("="))),
+            alt((tag("'"), tag("\""), tag("|||"))),
+        )(input)?;
         let (input, bytes) = terminated(take_until(quote), pair(tag(quote), space0))(input)?;
         Ok((input, bytes))
+    }
+}
+
+fn bool_property<'a>(t: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], bool> {
+    move |i: &[u8]| {
+        let (input, _) = take_while(|c| is_space(c) || is_newline(c))(i)?;
+        let (input, bytes) = delimited(
+            pair(tag(t), tag("=")),
+            alt((tag("true"), tag("false"))),
+            opt(space0),
+        )(input)?;
+        Ok((
+            input,
+            match bytes {
+                b"true" => true,
+                _ => false,
+            },
+        ))
     }
 }
 
 // Checks all permutations of input parsers repeatedly against the input until
 // all have matched or all remaining fail. Returns None for any unmatches parsers
 // TODO make this a macro cause this is silly.
-fn opt_permutation<P, I, O, E>(
-    mut parsers: (P, P, P, P),
-) -> impl FnMut(I) -> IResult<I, (Option<O>, Option<O>, Option<O>, Option<O>), E>
+fn opt_permutation<P, PBOOL, I, O, OBOOL, E>(
+    mut parsers: (P, P, P, P, PBOOL),
+) -> impl FnMut(I) -> IResult<I, (Option<O>, Option<O>, Option<O>, Option<O>, Option<OBOOL>), E>
 where
     P: Parser<I, O, E>,
+    PBOOL: Parser<I, OBOOL, E>,
     E: ParseError<I>,
     I: Clone + Debug,
 {
     move |i: I| {
         let mut success = true;
-        let mut results = (None, None, None, None);
+        let mut results = (None, None, None, None, None);
         let mut input = i;
         while success {
             success = false;
@@ -453,13 +511,20 @@ where
                     input = i;
                 }
             }
-			if results.3.is_none() {
-				if let Ok((i, output)) = parsers.3.parse(input.clone()) {
-					results.3 = Some(output);
-					success = true;
-					input = i;
-				}
-			}
+            if results.3.is_none() {
+                if let Ok((i, output)) = parsers.3.parse(input.clone()) {
+                    results.3 = Some(output);
+                    success = true;
+                    input = i;
+                }
+            }
+            if results.4.is_none() {
+                if let Ok((i, output)) = parsers.4.parse(input.clone()) {
+                    results.4 = Some(output);
+                    success = true;
+                    input = i;
+                }
+            }
         }
         Ok((input, results))
     }
@@ -472,9 +537,10 @@ fn properties(i: &[u8]) -> IResult<&[u8], Properties> {
     let fname = property(FILENAME_PROP);
     let tag = property(TAG_PROP);
     let mode = property(TANGLE_MODE_PROP);
-	let code = property(CODE_PROP);
-    let (input, (filename, tag, mode, code)) =
-        all_consuming(opt_permutation((fname, tag, mode, code)))(i)?;
+    let code = property(CODE_PROP);
+    let ignore = bool_property(IGNORE_PROP);
+    let (input, (filename, tag, mode, code, ignore)) =
+        all_consuming(opt_permutation((fname, tag, mode, code, ignore)))(i)?;
     Ok((
         input,
         Properties {
@@ -484,7 +550,8 @@ fn properties(i: &[u8]) -> IResult<&[u8], Properties> {
                 Some(mode) => Some(TangleMode::from_bytes(mode)?.1),
                 None => None,
             },
-			code,
+            code,
+            ignore,
         },
     ))
 }
@@ -497,7 +564,7 @@ mod tests {
     fn test_betwixt() {
         let btxt = &b"<?btxt+rust tag='test1'
  mode=\"overwrite\" filename='test/src/lib.rs' code=|||
-print('foo')|||   ?>";
+print('foo')||| ignore=false  ?>";
         let mut betwixt = betwixt(BETWIXT_TOKEN, CLOSE_TOKEN);
         let res = betwixt(&btxt[..]);
         assert!(res.is_ok(), "valid betwixt body should parse successfully");
@@ -519,8 +586,14 @@ print('foo')|||   ?>";
             Some(&b"rust"[..]),
             "should parse lang successfully"
         );
-		assert_eq!(props.1.code, Some(&b"
-print('foo')"[..]))
+        assert_eq!(
+            props.1.code,
+            Some(
+                &b"
+print('foo')"[..]
+            )
+        );
+        assert_eq!(props.1.ignore, Some(false));
     }
 
     #[test]
@@ -691,32 +764,65 @@ print('this is inline python')
 ```python
 print('hello world')
 ```
+
+This code block shouldn't be included
+<?btxt ignore=true ?>
+```silly
+PrInTlN('foo');
+```
 Ignore all this fluff";
-		let doc = Document::from_contents(&markdown[..], &mut parsers);
+        let doc = Document::from_contents(&markdown[..], &mut parsers);
         let root = doc.root;
         assert_eq!(2, root.children.len());
-		// children[0] Section 2A
-		assert_eq!(Some(&b"Section 2A"[..]), root.children[0].part.heading);
+        // children[0] Section 2A
+        assert_eq!(Some(&b"Section 2A"[..]), root.children[0].part.heading);
         assert_eq!(root.children[0].code_block_indexes.len(), 1);
         assert_eq!(
-            doc.code_blocks[root.children[0].code_block_indexes[0]].properties.filename,
+            doc.code_blocks[root.children[0].code_block_indexes[0]]
+                .properties
+                .filename,
             Some(&b"test.rs"[..])
         );
         assert_eq!(
-            doc.code_blocks[root.children[0].code_block_indexes[0]].part.contents,
+            doc.code_blocks[root.children[0].code_block_indexes[0]]
+                .part
+                .contents,
             &b"println!(\"test\");\n"[..]
         );
         assert_eq!(root.children[0].children.len(), 1);
-		assert_eq!(Some(&b"Section 3A"[..]), root.children[0].children[0].part.heading);
-		assert_eq!(root.children[0].children[0].children.len(), 2);
-		assert_eq!(root.children[0].children[0].code_block_indexes.len(), 1);
-		assert_eq!(doc.code_blocks[root.children[0].children[0].code_block_indexes[0]].properties.filename, Some(&b"foo.rs"[..]));
-		assert_eq!(root.children[0].children[0].children[0].code_block_indexes.len(), 1);
-		assert_eq!(doc.code_blocks[root.children[0].children[0].children[0].code_block_indexes[0]].properties.filename, Some(&b"foo.py"[..]));
-		
-		// children[1] Section 2B
-		assert_eq!(Some(&b"Section 2B"[..]), root.children[1].part.heading);
-		assert_eq!(1, root.children[1].code_block_indexes.len());
-		assert_eq!(Some(&b"test.rs"[..]), doc.code_blocks[root.children[1].code_block_indexes[0]].properties.filename);
+        assert_eq!(
+            Some(&b"Section 3A"[..]),
+            root.children[0].children[0].part.heading
+        );
+        assert_eq!(root.children[0].children[0].children.len(), 2);
+        assert_eq!(root.children[0].children[0].code_block_indexes.len(), 1);
+        assert_eq!(
+            doc.code_blocks[root.children[0].children[0].code_block_indexes[0]]
+                .properties
+                .filename,
+            Some(&b"foo.rs"[..])
+        );
+        assert_eq!(
+            root.children[0].children[0].children[0]
+                .code_block_indexes
+                .len(),
+            1
+        );
+        assert_eq!(
+            doc.code_blocks[root.children[0].children[0].children[0].code_block_indexes[0]]
+                .properties
+                .filename,
+            Some(&b"foo.py"[..])
+        );
+
+        // children[1] Section 2B
+        assert_eq!(Some(&b"Section 2B"[..]), root.children[1].part.heading);
+        assert_eq!(1, root.children[1].code_block_indexes.len());
+        assert_eq!(
+            Some(&b"test.rs"[..]),
+            doc.code_blocks[root.children[1].code_block_indexes[0]]
+                .properties
+                .filename
+        );
     }
 }
