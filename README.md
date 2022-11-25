@@ -60,6 +60,10 @@ Currently, you can set the following properties in a betwixt block:
  - `tag` sets a tag, just a string, on the code block(s). This allows filtering on the command line to only tangle code with a certain tag. Additional functionality around tags is likely coming soon.
  
  While it is not treated as a normal property, you can also set a `code` property in a betwixt block. This is never inherited, and it is effectively treated as a code block for tangle operations. The difference is that it isn't visible in the rendered markdown -- this is useful for internal plumbing or boilerplate you don't want the end users seeing.
+ 
+#### Scope
+
+Properties are defined with a scope of markdown headings. Parent headings' properties are inherited by children, but don't affect siblings or parents.
 
 #### Example
 
@@ -93,10 +97,11 @@ Betwixt is still very, very early. It does technically work, but it is going to 
 
 Ultimately, I want betwixt to have the following features before I will consider it complete:
 
- [ ] Strict mode to prevent you from doing some things you probably don't intend to (e.g. source blocks that are never tangled)
- [ ] Prefix and Postfix code properties
- [ ] Simple test runner to create temp directories, execute commands, output success or failure, and cleanup
- [ ] Insert mode to insert code blocks into a specific point in an existing file
- [ ] The ability to execute code blocks by tag or id and put the results in the MD file (a la org-babel)
- [ ] Extension of above, interpolation to allow execution of one block to be input or variable to another block (a la org-babel). This will likely be more simplistic than OB's version.
+ - [ ] Strict mode to prevent you from doing some things you probably don't intend to (e.g. source blocks that are never tangled)
+ - [ ] Prefix and Postfix code properties
+ - [ ] Simple test runner to create temp directories, execute commands, output success or failure, and cleanup
+ - [ ] Insert mode to insert code blocks into a specific point in an existing file
+ - [ ] Support tangling from multiple markdown documents in a heirarchy
+ - [ ] The ability to execute code blocks by tag or id and put the results in the MD file (a la org-babel)
+ - [ ] Extension of above, interpolation to allow execution of one block to be input or variable to another block (a la org-babel). This will likely be more simplistic than OB's version.
  
