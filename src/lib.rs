@@ -17,6 +17,7 @@ pub const CLOSE_TOKEN: &'static str = "?>";
 pub const CLOSE_COM_TOKEN: &'static str = "-->";
 const FILENAME_PROP: &'static str = "filename";
 const TAG_PROP: &'static str = "tag";
+const CODE_PROP: &'static str = "code";
 const TANGLE_MODE_PROP: &'static str = "mode";
 
 #[derive(Debug, Clone)]
@@ -94,6 +95,10 @@ pub struct Properties<'a> {
     pub filename: Option<&'a [u8]>,
     pub tag: Option<&'a [u8]>,
     pub mode: Option<TangleMode<'a>>,
+	// TODO there is an alternative where parsing properties with code
+	// simply returns a code block with the applied properties. At the moment,
+	// though, this is the solution that seems less hacky
+	code: Option<&'a [u8]>
 }
 
 impl<'a> Properties<'a> {
@@ -236,7 +241,21 @@ impl<'a> Document<'a> {
 					});
 				},
                 ScanResult::Properties(props) => {
-					section.properties.update(props.0, props.1);
+					if let Some(code) = props.1.code {
+						section.code_block_indexes.push(blocks.len());
+						let lang = props.0;
+						section.properties.update(props.0, props.1);
+						let props = section.properties.get_code_props(lang);
+						blocks.push(Code{
+							part: CodePart{
+								lang: lang,
+								contents: code
+							},
+							properties: props
+						})
+					} else {
+						section.properties.update(props.0, props.1);
+					}
                 }
             }
             next = scan(input, false, parsers);
@@ -390,8 +409,7 @@ where
 fn property<'a>(t: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> {
     move |i: &[u8]| {
         let (input, _) = take_while(|c| is_space(c) || is_newline(c))(i)?;
-        let (input, quote) =
-            preceded(tuple((tag(t), tag("="))), alt((tag("'"), tag("\""))))(input)?;
+        let (input, quote) = preceded(tuple((tag(t), tag("="))), alt((tag("'"), tag("\""), tag("|||"))))(input)?;
         let (input, bytes) = terminated(take_until(quote), pair(tag(quote), space0))(input)?;
         Ok((input, bytes))
     }
@@ -401,8 +419,8 @@ fn property<'a>(t: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> {
 // all have matched or all remaining fail. Returns None for any unmatches parsers
 // TODO make this a macro cause this is silly.
 fn opt_permutation<P, I, O, E>(
-    mut parsers: (P, P, P),
-) -> impl FnMut(I) -> IResult<I, (Option<O>, Option<O>, Option<O>), E>
+    mut parsers: (P, P, P, P),
+) -> impl FnMut(I) -> IResult<I, (Option<O>, Option<O>, Option<O>, Option<O>), E>
 where
     P: Parser<I, O, E>,
     E: ParseError<I>,
@@ -410,7 +428,7 @@ where
 {
     move |i: I| {
         let mut success = true;
-        let mut results = (None, None, None);
+        let mut results = (None, None, None, None);
         let mut input = i;
         while success {
             success = false;
@@ -435,6 +453,13 @@ where
                     input = i;
                 }
             }
+			if results.3.is_none() {
+				if let Ok((i, output)) = parsers.3.parse(input.clone()) {
+					results.3 = Some(output);
+					success = true;
+					input = i;
+				}
+			}
         }
         Ok((input, results))
     }
@@ -447,8 +472,9 @@ fn properties(i: &[u8]) -> IResult<&[u8], Properties> {
     let fname = property(FILENAME_PROP);
     let tag = property(TAG_PROP);
     let mode = property(TANGLE_MODE_PROP);
-    let (input, (filename, tag, mode)) =
-        all_consuming(opt_permutation((fname, tag, mode)))(i)?;
+	let code = property(CODE_PROP);
+    let (input, (filename, tag, mode, code)) =
+        all_consuming(opt_permutation((fname, tag, mode, code)))(i)?;
     Ok((
         input,
         Properties {
@@ -458,6 +484,7 @@ fn properties(i: &[u8]) -> IResult<&[u8], Properties> {
                 Some(mode) => Some(TangleMode::from_bytes(mode)?.1),
                 None => None,
             },
+			code,
         },
     ))
 }
@@ -469,7 +496,8 @@ mod tests {
     #[test]
     fn test_betwixt() {
         let btxt = &b"<?btxt+rust tag='test1'
- mode=\"overwrite\" filename='test/src/lib.rs'   ?>";
+ mode=\"overwrite\" filename='test/src/lib.rs' code=|||
+print('foo')|||   ?>";
         let mut betwixt = betwixt(BETWIXT_TOKEN, CLOSE_TOKEN);
         let res = betwixt(&btxt[..]);
         assert!(res.is_ok(), "valid betwixt body should parse successfully");
@@ -489,8 +517,10 @@ mod tests {
         assert_eq!(
             props.0,
             Some(&b"rust"[..]),
-            "should parse 'lang' successfully"
+            "should parse lang successfully"
         );
+		assert_eq!(props.1.code, Some(&b"
+print('foo')"[..]))
     }
 
     #[test]
@@ -652,7 +682,10 @@ some content that we don't care about
 
   ## This doesn't count as a section
   foo bar baz
-
+<?btxt+python filename='foo.py' code=|||
+print('this is inline python')
+# But it doesn't show up in the markdown!
+||| ?>
 #### Section 4A
 ## Section 2B
 ```python
@@ -678,7 +711,9 @@ Ignore all this fluff";
 		assert_eq!(root.children[0].children[0].children.len(), 2);
 		assert_eq!(root.children[0].children[0].code_block_indexes.len(), 1);
 		assert_eq!(doc.code_blocks[root.children[0].children[0].code_block_indexes[0]].properties.filename, Some(&b"foo.rs"[..]));
-
+		assert_eq!(root.children[0].children[0].children[0].code_block_indexes.len(), 1);
+		assert_eq!(doc.code_blocks[root.children[0].children[0].children[0].code_block_indexes[0]].properties.filename, Some(&b"foo.py"[..]));
+		
 		// children[1] Section 2B
 		assert_eq!(Some(&b"Section 2B"[..]), root.children[1].part.heading);
 		assert_eq!(1, root.children[1].code_block_indexes.len());
