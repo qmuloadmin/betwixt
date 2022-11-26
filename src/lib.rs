@@ -161,7 +161,7 @@ impl<'a> Document<'a> {
     pub fn from_contents<P1, P2, P3>(
         contents: &'a [u8],
         parsers: &mut MarkdownParsers<P1, P2, P3>,
-    ) -> Self
+    ) -> Result<Self, BetwixtParseError>
     where
         P1: PropertiesParser<'a>,
         P2: SectionParser<'a>,
@@ -187,92 +187,108 @@ impl<'a> Document<'a> {
         // a given index in the stack is the current parent of that level.
         let mut section_frame: [Option<Section>; 10] =
             [None, None, None, None, None, None, None, None, None, None]; // support 9 + root levels of headings
-        while next.is_some() {
-            let (input, item) = next.unwrap();
-            match item {
-                ScanResult::Section(new) => {
-                    if new.level == section.part.level {
-                        // parent section isn't changing, just the active section is.
-                        let props = section.properties.clone();
-                        section_frame[section.part.level]
-                            .as_mut()
-                            .unwrap()
-                            .children
-                            .push(section);
-                        section = Section::new(new, props);
-                    } else if new.level < section.part.level {
-                        // we're going back to a higher level heading. This means append the section
-                        // to the current level's parent. Then find the appropriate parent for the new
-                        // level and set the new current parent.
-                        section_frame[section.part.level]
-                            .as_mut()
-                            .unwrap()
-                            .children
-                            .push(section);
-                        if section_frame[new.level].is_none() {
-                            // find the next highest index with a parent
-                            for idx in new.level + 1..10 {
-                                if section_frame[idx].is_some() {
-                                    section_frame.swap(new.level, idx);
-                                    break;
-                                }
-                            }
-                        }
-                        // all children lower (numerically higher) than the new section
-                        // will never get a chance to be reconciled. We need to do so now.
-                        for idx in (new.level + 1..10).rev() {
-                            if section_frame[idx].is_some() {
-                                let mut child = None;
-                                mem::swap(&mut section_frame[idx], &mut child);
-                                let child = child.unwrap();
-                                section_frame[child.part.level]
+        loop {
+            match next {
+                Ok((input, item)) => {
+                    match item {
+                        ScanResult::Section(new) => {
+                            if new.level == section.part.level {
+                                // parent section isn't changing, just the active section is.
+                                let props = section_frame[section.part.level]
+                                    .as_ref()
+                                    .unwrap()
+                                    .properties
+                                    .clone();
+                                section_frame[section.part.level]
                                     .as_mut()
                                     .unwrap()
                                     .children
-                                    .push(child);
+                                    .push(section);
+                                section = Section::new(new, props);
+                            } else if new.level < section.part.level {
+                                // we're going back to a higher level heading. This means append the section
+                                // to the current level's parent. Then find the appropriate parent for the new
+                                // level and set the new current parent.
+                                section_frame[section.part.level]
+                                    .as_mut()
+                                    .unwrap()
+                                    .children
+                                    .push(section);
+                                if section_frame[new.level].is_none() {
+                                    // find the next highest index with a parent
+                                    for idx in new.level + 1..10 {
+                                        if section_frame[idx].is_some() {
+                                            section_frame.swap(new.level, idx);
+                                            break;
+                                        }
+                                    }
+                                }
+                                // all children lower (numerically higher) than the new section
+                                // will never get a chance to be reconciled. We need to do so now.
+                                for idx in (new.level + 1..10).rev() {
+                                    if section_frame[idx].is_some() {
+                                        let mut child = None;
+                                        mem::swap(&mut section_frame[idx], &mut child);
+                                        let child = child.unwrap();
+                                        section_frame[child.part.level]
+                                            .as_mut()
+                                            .unwrap()
+                                            .children
+                                            .push(child);
+                                    }
+                                }
+                                let idx = new.level;
+                                section = Section::new(
+                                    new,
+                                    section_frame[idx].as_ref().unwrap().properties.clone(),
+                                );
+                            } else {
+                                // going to a child section
+                                let props = section.properties.clone();
+                                section_frame[new.level] = Some(section);
+                                section = Section::new(new, props);
                             }
                         }
-                        let idx = new.level;
-                        section = Section::new(
-                            new,
-                            section_frame[idx].as_ref().unwrap().properties.clone(),
-                        );
-                    } else {
-                        // going to a child section
-                        let props = section.properties.clone();
-                        section_frame[new.level] = Some(section);
-                        section = Section::new(new, props);
+                        ScanResult::Code(code) => {
+                            let props = section.properties.get_code_props(code.lang);
+                            if !props.ignore.unwrap_or(false) {
+                                section.code_block_indexes.push(blocks.len());
+                                blocks.push(Code {
+                                    properties: props,
+                                    part: code,
+                                });
+                            }
+                        }
+                        ScanResult::Properties(props) => {
+                            if let Some(code) = props.1.code {
+                                section.code_block_indexes.push(blocks.len());
+                                let lang = props.0;
+                                section.properties.update(props.0, props.1);
+                                let props = section.properties.get_code_props(lang);
+                                blocks.push(Code {
+                                    part: CodePart {
+                                        lang: lang,
+                                        contents: code,
+                                    },
+                                    properties: props,
+                                })
+                            } else {
+                                section.properties.update(props.0, props.1);
+                            }
+                        }
+                        ScanResult::End => {
+                            break;
+                        }
                     }
+                    next = scan(input, false, parsers);
                 }
-                ScanResult::Code(code) => {
-                    let props = section.properties.get_code_props(code.lang);
-                    if !props.ignore.unwrap_or(false) {
-                        section.code_block_indexes.push(blocks.len());
-                        blocks.push(Code {
-                            properties: props,
-                            part: code,
-                        });
+                Err(err) => {
+                    if parsers.strict {
+                        return Err(err);
                     }
-                }
-                ScanResult::Properties(props) => {
-                    if let Some(code) = props.1.code {
-                        section.code_block_indexes.push(blocks.len());
-                        let lang = props.0;
-                        section.properties.update(props.0, props.1);
-                        let props = section.properties.get_code_props(lang);
-                        blocks.push(Code {
-                            part: CodePart {
-                                lang: lang,
-                                contents: code,
-                            },
-                            properties: props,
-                        })
-                    } else {
-                        section.properties.update(props.0, props.1);
-                    }
+                    next = scan(contents, true, parsers);
                 }
             }
-            next = scan(input, false, parsers);
         }
         section_frame[section.part.level]
             .as_mut()
@@ -287,10 +303,10 @@ impl<'a> Document<'a> {
                 match section_frame[child.part.level].as_mut() {
                     Some(parent) => parent.children.push(child),
                     None => {
-                        return Document {
+                        return Ok(Document {
                             code_blocks: blocks,
                             root: child,
-                        }
+                        })
                     }
                 }
             }
@@ -303,18 +319,36 @@ pub struct MarkdownParsers<P1, P2, P3> {
     pub betwixt: P1,
     pub section: P2,
     pub code: P3,
+    pub strict: bool,
 }
 
 enum ScanResult<'a> {
     Code(CodePart<'a>),
     Section(SectionPart<'a>),
     Properties((Option<&'a [u8]>, Properties<'a>)),
+    End,
+}
+
+// BetwixtParseError occurs when the beginning and end <?btxt ?> tags are matched
+// but the properties fail to consume the content completely. This suggests a
+// typo and we need to indicate this to the user
+#[derive(Debug)]
+pub struct BetwixtParseError;
+
+impl ParseError<&[u8]> for BetwixtParseError {
+    fn from_error_kind(_input: &[u8], _kind: nom::error::ErrorKind) -> Self {
+        Self
+    }
+
+    fn append(_input: &[u8], _kind: nom::error::ErrorKind, _other: Self) -> Self {
+        Self
+    }
 }
 
 pub fn betwixt<'a>(
     start: &'static str,
     end: &'static str,
-) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], (Option<&'a [u8]>, Properties)> {
+) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], (Option<&'a [u8]>, Properties), BetwixtParseError> {
     move |i: &[u8]| {
         let (input, (lang, body)) = delimited(
             tag(start),
@@ -324,7 +358,7 @@ pub fn betwixt<'a>(
             ),
             tag(end),
         )(i)?;
-        let properties = properties(body)?;
+        let properties = properties(body).map_err(|_| nom::Err::Failure(BetwixtParseError))?;
         Ok((input, (lang, properties.1)))
     }
 }
@@ -388,11 +422,11 @@ pub fn section<'a>(mark: char) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Section
 }
 
 pub trait PropertiesParser<'a>:
-    Parser<&'a [u8], (Option<&'a [u8]>, Properties<'a>), nom::error::Error<&'a [u8]>>
+    Parser<&'a [u8], (Option<&'a [u8]>, Properties<'a>), BetwixtParseError>
 {
 }
 impl<'a, T> PropertiesParser<'a> for T where
-    T: Parser<&'a [u8], (Option<&'a [u8]>, Properties<'a>), nom::error::Error<&'a [u8]>>
+    T: Parser<&'a [u8], (Option<&'a [u8]>, Properties<'a>), BetwixtParseError>
 {
 }
 pub trait SectionParser<'a>:
@@ -411,7 +445,7 @@ fn scan<'a, P1, P2, P3>(
     i: &'a [u8],
     first: bool,
     parsers: &mut MarkdownParsers<P1, P2, P3>,
-) -> Option<(&'a [u8], ScanResult<'a>)>
+) -> Result<(&'a [u8], ScanResult<'a>), BetwixtParseError>
 where
     P1: PropertiesParser<'a>,
     P2: SectionParser<'a>,
@@ -422,24 +456,28 @@ where
         if new_line {
             // these parsers should only match on newlines, not mid-line
             match parsers.code.parse(&i[idx..]) {
-                Ok(result) => return Some((result.0, ScanResult::Code(result.1))),
+                Ok(result) => return Ok((result.0, ScanResult::Code(result.1))),
                 Err(_) => {} // continue
             };
             match parsers.section.parse(&i[idx..]) {
-                Ok(result) => return Some((result.0, ScanResult::Section(result.1))),
+                Ok(result) => return Ok((result.0, ScanResult::Section(result.1))),
                 Err(_) => {} // continue
             };
             new_line = false;
         }
         match parsers.betwixt.parse(&i[idx..]) {
-            Ok(result) => return Some((result.0, ScanResult::Properties(result.1))),
-            Err(_) => {} // continue
+            Ok(result) => return Ok((result.0, ScanResult::Properties(result.1))),
+            Err(err) => match err {
+                nom::Err::Failure(_) => return Err(BetwixtParseError),
+                nom::Err::Error(_) => {}
+                _ => panic!("unreachable"), // shouldn't occur when dealing with "complete" types
+            },
         }
         if i[idx] == 10 {
             new_line = true;
         }
     }
-    None
+    Ok((&i[i.input_len()..], ScanResult::End))
 }
 
 fn property<'a>(t: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> {
@@ -604,11 +642,26 @@ print('foo')"[..]
     }
 
     #[test]
+    fn test_strict_mode_properties() {
+        let contents = &b"Some stuff that doesn't matter
+<?btxt filename='foo' tog='bad' ?>"[..];
+        let mut parsers = MarkdownParsers {
+            code: code("```", "```"),
+            section: section('#'),
+            betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
+            strict: true,
+        };
+
+        assert!(Document::from_contents(contents, &mut parsers).is_err());
+    }
+
+    #[test]
     fn test_header_sections() {
         let mut parsers = MarkdownParsers {
             code: code("```", "```"),
             section: section('#'),
             betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
+            strict: true,
         };
         let contents = &b"
 Welcome!
@@ -626,7 +679,7 @@ print('foo')
 More content
 ";
         let results = scan(&contents[..], true, &mut parsers);
-        assert!(results.is_some());
+        assert!(results.is_ok());
         let results = results.unwrap();
         match results.1 {
             ScanResult::Section(section) => {
@@ -642,6 +695,7 @@ More content
             code: code("```", "```"),
             section: section('#'),
             betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
+            strict: true,
         };
         let contents = &b"
 This is a big ol' code block
@@ -654,7 +708,7 @@ With some potential gotchas!
 And this isn't code anymore
 ";
         let results = scan(&contents[..], true, &mut parsers);
-        assert!(results.is_some());
+        assert!(results.is_ok());
         match &results.as_ref().unwrap().1 {
             ScanResult::Code(code) => {
                 assert!(code.lang.is_some());
@@ -737,6 +791,7 @@ And this isn't code anymore
             code: code("```", "```"),
             section: section('#'),
             betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
+            strict: true,
         };
         let markdown = &b"Test document
 <?btxt filename='test.rs' ?> some other stuff
@@ -771,7 +826,7 @@ This code block shouldn't be included
 PrInTlN('foo');
 ```
 Ignore all this fluff";
-        let doc = Document::from_contents(&markdown[..], &mut parsers);
+        let doc = Document::from_contents(&markdown[..], &mut parsers).unwrap();
         let root = doc.root;
         assert_eq!(2, root.children.len());
         // children[0] Section 2A
