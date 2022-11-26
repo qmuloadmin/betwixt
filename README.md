@@ -31,6 +31,8 @@ Betwixt configuration is accomplished using markdown comments of a certain forma
 
 This is going to configure betwixt to copy all code segments of all languages into a file called "test.py". You may use either single quotes `'` or double quotes `"` for property values. You may also use three pipe operators (`|||`) if you need to embed code in a property.
 
+Note that only properties with string values need or accept quotes. Properties that take boolean values (like `ignore`) take the literal `true` or `false` without quotes. Hopefully this is intuitive to most users.
+
 You can also configure properties that only apply to code blocks of a certain language.
 
 ```btxt
@@ -46,6 +48,7 @@ Currently, you can set the following properties in a betwixt block:
  - `filename` which indicates the file to which the code blocks should be written to. This should be a relative path.
  - `mode` indicates the write mode for writing to the files. By default it is `append`. Currently also supported is `overwrite`.
  - `tag` sets a tag, just a string, on the code block(s). This allows filtering on the command line to only tangle code with a certain tag. Additional functionality around tags is likely coming soon.
+ - `ignore` indicates that the code block should not be tangled, and should be left alone
  
  While it is not treated as a normal property, you can also set a `code` property in a betwixt block. This is never inherited, and it is effectively treated as a code block for tangle operations. The difference is that it isn't visible in the rendered markdown -- this is useful for internal plumbing or boilerplate you don't want the end users seeing.
  
