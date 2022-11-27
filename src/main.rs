@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::process;
 use std::str::from_utf8;
 
+use anyhow::{anyhow, Context, Result};
 use betwixt_parse::TangleMode;
 use betwixt_parse::{
     betwixt, code, section, Document, MarkdownParsers, BETWIXT_TOKEN, CLOSE_TOKEN,
@@ -26,28 +27,24 @@ struct Cli {
     tag: Option<String>,
 }
 
-fn main() {
-    let cli = Cli::parse();
-
-    let out_dir = match cli.output_dir {
-        Some(dir) => dir,
-        None => env::current_dir()
-            .expect("betwixt must be in a directory, or you must specify --outpath"),
-    };
-    let dir_meta = fs::metadata(&out_dir).expect("output directory doesn't exist");
+fn tangle(cli: Cli) -> Result<()> {
+    let out_dir = cli.output_dir.unwrap_or(
+        env::current_dir().context("betwixt must be in a directory or must specify --output")?,
+    );
+    let dir_meta = fs::metadata(&out_dir).context("output directory does not exist")?;
     if !dir_meta.is_dir() {
-        println!(
+        return Err(anyhow!(
             "output directory {} is not a directory",
             out_dir.to_string_lossy()
-        );
-        process::exit(1);
-    }
-    let file = File::open(cli.file).expect("failed to open specified input FILE");
+        ));
+    };
+    let file = File::open(cli.file).context("unable to open input file")?;
+
     let mut reader = BufReader::new(file);
     let mut bytes = Vec::new();
     reader
         .read_to_end(&mut bytes)
-        .expect("failed reading contents of file");
+        .context("failed reading contents of file")?;
 
     // TODO handle flavors... and this kinda sucks so rework this
     let mut parsers = MarkdownParsers {
@@ -56,14 +53,13 @@ fn main() {
         betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
         strict: !cli.no_strict,
     };
-
-    let markdown =
-        Document::from_contents(&bytes[..], &mut parsers).expect("strict mode: failed to parse");
+    let markdown = Document::from_contents(&bytes[..], &mut parsers)
+        .context("strict mode: failed to parse")?;
     for block in markdown.code_blocks.iter() {
         if let Some(filter) = cli.tag.as_ref() {
             match block.properties.tag {
                 Some(tag) => {
-                    if from_utf8(tag).unwrap() != filter {
+                    if from_utf8(tag).context("failed to parse tag as utf8")? != filter {
                         continue;
                     }
                 }
@@ -101,19 +97,44 @@ fn main() {
                         panic!("insert mode is unimplemented");
                     }
                 };
+                if let Some(prefix) = block.properties.prefix {
+                    file.write_all(prefix)
+                        .context("failed to write prefix for code block to file")?;
+                }
                 file.write_all(block.part.contents)
-                    .expect("error writing to file");
+                    .context("failed to write code block to file")?;
+                if let Some(postfix) = block.properties.postfix {
+                    file.write_all(postfix)
+                        .context("failed to write postfix for code block to file")?;
+                }
             } else {
                 if !cli.no_strict {
-                    panic!("code file without mode or filename found, strict mode enforced")
+                    return Err(anyhow!(
+                        "code block without filename found, strict mode enforced"
+                    ));
                 }
                 continue;
             }
         } else {
             if !cli.no_strict {
-                panic!("code file without mode or filename found, strict mode enforced")
+                return Err(anyhow!(
+                    "code block without mode found, strict mode enforced"
+                ));
             }
             continue;
         };
+    }
+    Ok(())
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    match tangle(cli) {
+        Ok(()) => println!("Done"),
+        Err(err) => {
+            println!("Error: {}", err);
+            process::exit(1);
+        }
     }
 }

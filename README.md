@@ -49,12 +49,61 @@ Currently, you can set the following properties in a betwixt block:
  - `mode` indicates the write mode for writing to the files. By default it is `append`. Currently also supported is `overwrite`.
  - `tag` sets a tag, just a string, on the code block(s). This allows filtering on the command line to only tangle code with a certain tag. Additional functionality around tags is likely coming soon.
  - `ignore` indicates that the code block should not be tangled, and should be left alone
+ - `prefix` sets a code block to be written to file _before_ contents in visible code blocks are written. This is good for hiding boilerplate.
+ - `postfix` sets a code block to be written to file _after_ contents in visible code blocks are written.
  
  While it is not treated as a normal property, you can also set a `code` property in a betwixt block. This is never inherited, and it is effectively treated as a code block for tangle operations. The difference is that it isn't visible in the rendered markdown -- this is useful for internal plumbing or boilerplate you don't want the end users seeing.
  
 #### Scope
 
-Properties are defined with a scope of markdown headings. Parent headings' properties are inherited by children, but don't affect siblings or parents.
+Properties are defined with a scope of markdown headings. Parent headings' properties are inherited by children, but don't affect siblings or parents. Global properties (properties with no language set) override unset values on properties with a language set. This should hopefully be intuitive. 
+
+##### Example
+
+Consider the following markdown source. There are no code blocks here, we are simply focusing on betwixt blocks for properties.
+
+```btxt
+	The root of the document (no explicit headings set yet) is the parent of all headings
+	The below betwixt block sets a global (no set language) `mode` property
+	<?btxt mode='overwrite' ?>
+
+	And the below block sets a filename for blocks that are _python_
+	<?btxt+python filename="foo.py" ?>
+	
+	# A Level Down
+	Because we are now in a child heading, properties are all inherited.
+	At this point, all code blocks have mode='overwrite' and python blocks will have filename='foo.py' set
+	<?btxt+python tag="a" ?>
+	
+	All code blocks below the above block will have the 'tag' property set to `a`
+	
+	# A Child level
+	Code blocks at this point would lost the `a` "tag" property, since that was set in a sibling.
+	However, we still have the properties from the root/parent, so we still have `mode` set to "overwrite"
+	
+	<?btxt+python filename="bar.py" ?>
+	
+	Any python code blocks from this point on in this heading level would now be set to write to "bar.py"
+	
+	## A Nested Child
+	
+	Since this is a child level, all code blocks in this section will receive the properties set in "A Child Level" and the root, 
+	so properties at this point look like this:
+	
+	 - mode="overwrite" for _all_ blocks
+	 - filename="bar.py" for python blocks
+	 
+	<?btxt tag="b" ?>
+	Now _all_ code blocks (regardless of langauge) have a tag property of "b" in this section (and any children)
+	
+	# Another Child Level
+	Okay, now we've dropped our "A Nested Child" and gone _up_ a level. Any properties set on the sibling and child are now gone. This means that properties look like this:
+	
+	- mode="overwrite" for _all_ blocks
+	- filename="foo.py" for python blocks
+	
+	Note that you can never reach the root level of the document once left, so properties set in the root are truly global
+```
 
 #### Example
 

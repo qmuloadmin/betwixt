@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::error::Error;
+use std::fmt::{Debug, Display};
 use std::mem;
 
 use nom::branch::alt;
@@ -20,6 +21,8 @@ const TAG_PROP: &'static str = "tag";
 const CODE_PROP: &'static str = "code";
 const TANGLE_MODE_PROP: &'static str = "mode";
 const IGNORE_PROP: &'static str = "ignore";
+const PREFIX_PROP: &'static str = "pre";
+const POSTFIX_PROP: &'static str = "post";
 
 #[derive(Debug, Clone)]
 pub enum TangleMode<'a> {
@@ -95,6 +98,8 @@ pub struct Properties<'a> {
     pub tag: Option<&'a [u8]>,
     pub mode: Option<TangleMode<'a>>,
     pub ignore: Option<bool>,
+    pub prefix: Option<&'a [u8]>,
+    pub postfix: Option<&'a [u8]>,
     // TODO there is an alternative where parsing properties with code
     // simply returns a code block with the applied properties. At the moment,
     // though, this is the solution that seems less hacky
@@ -102,18 +107,24 @@ pub struct Properties<'a> {
 }
 
 impl<'a> Properties<'a> {
-    fn merge(&mut self, other: &Properties<'a>) {
+    fn merge(&mut self, parent: &Properties<'a>) {
         if self.filename.is_none() {
-            self.filename = other.filename;
+            self.filename = parent.filename;
         }
         if self.tag.is_none() {
-            self.tag = other.tag;
+            self.tag = parent.tag;
         }
         if self.mode.is_none() {
-            self.mode = other.mode.clone();
+            self.mode = parent.mode.clone();
         }
         if self.ignore.is_none() {
-            self.ignore = other.ignore;
+            self.ignore = parent.ignore;
+        }
+        if self.prefix.is_none() {
+            self.prefix = parent.prefix;
+        }
+        if self.postfix.is_none() {
+            self.postfix = parent.postfix;
         }
     }
 }
@@ -333,15 +344,40 @@ enum ScanResult<'a> {
 // but the properties fail to consume the content completely. This suggests a
 // typo and we need to indicate this to the user
 #[derive(Debug)]
-pub struct BetwixtParseError;
+pub enum BetwixtParseError {
+    // NoMatch means the Betwixt blocks didn't match open/close tags
+    // essentially this means everything is fine -- just a byte stream
+    // that isn't a betwixt block
+    NoMatch(nom::error::ErrorKind),
+    // InvalidProperties means the start/end tags <?btxt ?> were matched
+    // but the contents didn't all part to valid properties. It returns the
+    // properties that did successfully match
+    InvalidProperties,
+}
+
+impl Error for BetwixtParseError {}
+
+impl Display for BetwixtParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self {
+                Self::InvalidProperties => "invalid properties for btxt block found",
+                Self::NoMatch(_) =>
+                    "no property match. If you're seeing this error, there's a bug. Report it!",
+            }
+        )
+    }
+}
 
 impl ParseError<&[u8]> for BetwixtParseError {
-    fn from_error_kind(_input: &[u8], _kind: nom::error::ErrorKind) -> Self {
-        Self
+    fn from_error_kind(_input: &[u8], kind: nom::error::ErrorKind) -> Self {
+        Self::NoMatch(kind)
     }
 
-    fn append(_input: &[u8], _kind: nom::error::ErrorKind, _other: Self) -> Self {
-        Self
+    fn append(_input: &[u8], _kind: nom::error::ErrorKind, other: Self) -> Self {
+        other
     }
 }
 
@@ -358,7 +394,8 @@ pub fn betwixt<'a>(
             ),
             tag(end),
         )(i)?;
-        let properties = properties(body).map_err(|_| nom::Err::Failure(BetwixtParseError))?;
+        let properties = properties(body)
+            .map_err(|_| nom::Err::Failure(BetwixtParseError::InvalidProperties))?;
         Ok((input, (lang, properties.1)))
     }
 }
@@ -383,7 +420,6 @@ pub fn code<'a>(
 }
 
 // Locate the index at which point a parser succeeded (returned Ok).
-
 fn locate_parser_match<I, O, P, E>(mut parser: P) -> impl FnMut(I) -> Result<usize, nom::Err<E>>
 where
     P: Parser<I, O, E>,
@@ -468,8 +504,10 @@ where
         match parsers.betwixt.parse(&i[idx..]) {
             Ok(result) => return Ok((result.0, ScanResult::Properties(result.1))),
             Err(err) => match err {
-                nom::Err::Failure(_) => return Err(BetwixtParseError),
-                nom::Err::Error(_) => {}
+                nom::Err::Failure(err) | nom::Err::Error(err) => match err {
+                    BetwixtParseError::InvalidProperties => return Err(err),
+                    _ => {}
+                },
                 _ => panic!("unreachable"), // shouldn't occur when dealing with "complete" types
             },
         }
@@ -514,8 +552,22 @@ fn bool_property<'a>(t: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], bool> 
 // all have matched or all remaining fail. Returns None for any unmatches parsers
 // TODO make this a macro cause this is silly.
 fn opt_permutation<P, PBOOL, I, O, OBOOL, E>(
-    mut parsers: (P, P, P, P, PBOOL),
-) -> impl FnMut(I) -> IResult<I, (Option<O>, Option<O>, Option<O>, Option<O>, Option<OBOOL>), E>
+    mut parsers: (P, P, P, P, P, P, PBOOL),
+) -> impl FnMut(
+    I,
+) -> IResult<
+    I,
+    (
+        Option<O>,
+        Option<O>,
+        Option<O>,
+        Option<O>,
+        Option<O>,
+        Option<O>,
+        Option<OBOOL>,
+    ),
+    E,
+>
 where
     P: Parser<I, O, E>,
     PBOOL: Parser<I, OBOOL, E>,
@@ -524,7 +576,7 @@ where
 {
     move |i: I| {
         let mut success = true;
-        let mut results = (None, None, None, None, None);
+        let mut results = (None, None, None, None, None, None, None);
         let mut input = i;
         while success {
             success = false;
@@ -563,27 +615,43 @@ where
                     input = i;
                 }
             }
+            if results.5.is_none() {
+                if let Ok((i, output)) = parsers.5.parse(input.clone()) {
+                    results.5 = Some(output);
+                    success = true;
+                    input = i;
+                }
+            }
+            if results.6.is_none() {
+                if let Ok((i, output)) = parsers.6.parse(input.clone()) {
+                    results.6 = Some(output);
+                    success = true;
+                    input = i;
+                }
+            }
         }
         Ok((input, results))
     }
 }
 
-// FIXME currently we just indicate that we don't match if a betwixt section contains invalid
-// properties or extra characters. We should indicate instead failure and let the strict mode
-// configuration determine what that means.
 fn properties(i: &[u8]) -> IResult<&[u8], Properties> {
     let fname = property(FILENAME_PROP);
     let tag = property(TAG_PROP);
     let mode = property(TANGLE_MODE_PROP);
     let code = property(CODE_PROP);
     let ignore = bool_property(IGNORE_PROP);
-    let (input, (filename, tag, mode, code, ignore)) =
-        all_consuming(opt_permutation((fname, tag, mode, code, ignore)))(i)?;
+    let prefix = property(PREFIX_PROP);
+    let postfix = property(POSTFIX_PROP);
+    let (input, (filename, prefix, postfix, tag, mode, code, ignore)) = all_consuming(
+        opt_permutation((fname, prefix, postfix, tag, mode, code, ignore)),
+    )(i)?;
     Ok((
         input,
         Properties {
             filename,
             tag,
+            prefix,
+            postfix,
             mode: match mode {
                 Some(mode) => Some(TangleMode::from_bytes(mode)?.1),
                 None => None,
@@ -632,6 +700,21 @@ print('foo')"[..]
             )
         );
         assert_eq!(props.1.ignore, Some(false));
+        let btxt = &b"<?btxt pre=|||package main
+import \"fmt\"
+func main() {||| post='}' ?>";
+        let res = betwixt(&btxt[..]);
+        assert!(res.is_ok());
+        let props = res.unwrap().1;
+        assert_eq!(
+            props.1.prefix,
+            Some(
+                &b"package main
+import \"fmt\"
+func main() {"[..]
+            )
+        );
+        assert_eq!(props.1.postfix, Some(&b"}"[..]));
     }
 
     #[test]
@@ -814,6 +897,13 @@ some content that we don't care about
 print('this is inline python')
 # But it doesn't show up in the markdown!
 ||| ?>
+##### Section 5B
+
+```python
+# This code block should no longer have filename='foo.py'
+@ As we're now in a sibling of those props
+```
+
 #### Section 4A
 ## Section 2B
 ```python
@@ -849,7 +939,7 @@ Ignore all this fluff";
             Some(&b"Section 3A"[..]),
             root.children[0].children[0].part.heading
         );
-        assert_eq!(root.children[0].children[0].children.len(), 2);
+        assert_eq!(root.children[0].children[0].children.len(), 3);
         assert_eq!(root.children[0].children[0].code_block_indexes.len(), 1);
         assert_eq!(
             doc.code_blocks[root.children[0].children[0].code_block_indexes[0]]
@@ -863,13 +953,23 @@ Ignore all this fluff";
                 .len(),
             1
         );
+
+        assert_eq!(
+            root.children[0].children[0].children[0].part.heading,
+            Some(&b"Section 5A"[..])
+        );
         assert_eq!(
             doc.code_blocks[root.children[0].children[0].children[0].code_block_indexes[0]]
                 .properties
                 .filename,
             Some(&b"foo.py"[..])
         );
-
+        assert_eq!(
+            doc.code_blocks[root.children[0].children[0].children[1].code_block_indexes[0]]
+                .properties
+                .filename,
+            Some(&b"foo.rs"[..])
+        );
         // children[1] Section 2B
         assert_eq!(Some(&b"Section 2B"[..]), root.children[1].part.heading);
         assert_eq!(1, root.children[1].code_block_indexes.len());
