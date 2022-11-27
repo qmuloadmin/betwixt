@@ -10,7 +10,7 @@ Simple, markdown-based, polyglot literate programming and documentation tests.
 
 Betwixt is heavily inspired by the literate programming features of Emacs Org Mode. The ability to write documentation intended for humans, with easily-consumable formatting, emphasis and organization, and embed code examples or even API call examples in that documentation, and have those examples be executable tests means documentation never gets out of date -- if you change the code, the documentation _is the test_ and so you must update the documentation to pass. 
 
-Betwixt extracts code segments from README files (currently, only github flavor is supported, but broader support is planned) and _tangles_ them into various source files as configured, allowing them to be built and executed as a part of the CI/CD pipeline, causing failure if the documentation is out of date, or simply allowing entire programs to be written in a format primarily suitable for human consumption, instead of the opposite.
+Betwixt extracts code segments from markdown files (currently, only github flavor is supported, but broader support is planned) and _tangles_ them into various source files as configured, allowing them to be built and executed as a part of the CI/CD pipeline, causing failure if the documentation is out of date, or simply allowing entire programs to be written in a format primarily suitable for human consumption, instead of the opposite.
 
 ## Installation
 
