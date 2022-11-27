@@ -1,4 +1,5 @@
 <?btxt+btxt ignore=true ?>
+<?btxt mode='overwrite' ?>
 # Betwixt
 
 Simple, markdown-based, polyglot literate programming and documentation tests. 
@@ -56,6 +57,8 @@ Currently, you can set the following properties in a betwixt block:
  
 #### Scope
 
+<?btxt+btxt ignore=false filename='scope.md' tag='scope' ?>
+
 Properties are defined with a scope of markdown headings. Parent headings' properties are inherited by children, but don't affect siblings or parents. Global properties (properties with no language set) override unset values on properties with a language set. This should hopefully be intuitive. 
 
 Consider the following markdown source. There are no code blocks here, we are simply focusing on betwixt blocks for properties.
@@ -94,11 +97,20 @@ so properties at this point look like this:
 <?btxt tag="b" ?>
 Now _all_ code blocks (regardless of langauge) have a tag property of "b" in this section (and any children)
 
+'''python
+# this has the tag 'b' and will write to "bar.py"
+print("Hello, Betwixt!")
+'''
+
 # Another Child Level
 Okay, now we've dropped our "A Nested Child" and gone _up_ a level. Any properties set on the sibling and child are now gone. This means that properties look like this:
 
 - mode="overwrite" for _all_ blocks
 - filename="foo.py" for python blocks
+
+'''python
+print("Hello Foo File!")
+'''
 
 Note that you can never reach the root level of the document once left, so properties set in the root are truly global
 ```
@@ -110,7 +122,7 @@ Note that you can never reach the root level of the document once left, so prope
 import "fmt"
 
 func main() {
-||| mode='overwrite' ?>
+||| ?>
 
 For an example, look at the source of this markdown file compared to the rendered version. This markdown file is a simple but complete example of betwixt. The below code segment can be tangled into a source file that is executable, even though it isn't a complete, valid `golang` program by itself.
 
@@ -138,6 +150,7 @@ Ultimately, I want betwixt to have the following features before I will consider
  - [x] Strict mode to prevent you from doing some things you probably don't intend to (e.g. source blocks that are never tangled)
  - [x] Prefix and Postfix code properties
  - [ ] Clear and helpful error messages with line numbers
+ - [ ] Unicode-aware parsing instead of bytes with several unicode encoding support
  - [ ] Simple test runner to create temp directories, execute commands, output success or failure, and cleanup
  - [ ] Insert mode to insert code blocks into a specific point in an existing file
  - [ ] More Markdown flavors and Org Mode syntax support

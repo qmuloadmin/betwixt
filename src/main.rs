@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt::Display;
 use std::fs::{self, File, OpenOptions};
 use std::io::BufReader;
 use std::io::Read;
@@ -12,7 +13,31 @@ use betwixt_parse::TangleMode;
 use betwixt_parse::{
     betwixt, code, section, Document, MarkdownParsers, BETWIXT_TOKEN, CLOSE_TOKEN,
 };
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+#[derive(ValueEnum, Clone)]
+enum Flavor {
+    // markdown used by github and many others
+    Github,
+    // markdown flavor to use when extracting markdown from markdown code blocks
+    //
+    // particularly useful for eating your own dogfood and turning betwixt's documents
+    // into betwixt's tests
+    Nested,
+}
+
+impl Display for Flavor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self {
+                Flavor::Github => "github",
+                Flavor::Nested => "nested",
+            }
+        )
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "betwixt")]
@@ -25,6 +50,8 @@ struct Cli {
     no_strict: bool,
     #[arg(short = 't')]
     tag: Option<String>,
+    #[arg(long = "flavor", default_value_t = Flavor::Github)]
+    flavor: Flavor,
 }
 
 fn tangle(cli: Cli) -> Result<()> {
@@ -46,12 +73,19 @@ fn tangle(cli: Cli) -> Result<()> {
         .read_to_end(&mut bytes)
         .context("failed reading contents of file")?;
 
-    // TODO handle flavors... and this kinda sucks so rework this
-    let mut parsers = MarkdownParsers {
-        code: code("```", "```"),
-        section: section('#'),
-        betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
-        strict: !cli.no_strict,
+    let mut parsers = match cli.flavor {
+        Flavor::Github => MarkdownParsers {
+            code: code("```", "```"),
+            section: section('#'),
+            betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
+            strict: !cli.no_strict,
+        },
+        Flavor::Nested => MarkdownParsers {
+            code: code("'''", "'''"),
+            section: section('#'),
+            betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
+            strict: !cli.no_strict,
+        },
     };
     let markdown = Document::from_contents(&bytes[..], &mut parsers)
         .context("strict mode: failed to parse")?;
