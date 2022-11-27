@@ -30,7 +30,7 @@ Betwixt configuration is accomplished using markdown comments of a certain forma
 <?btxt filename='test.py' ?>
 ```
 
-This is going to configure betwixt to copy all code segments of all languages into a file called "test.py". You may use either single quotes `'` or double quotes `"` for property values. You may also use three pipe operators (`|||`) if you need to embed code in a property.
+This is going to configure betwixt to copy all code segments of all languages into a file called "test.py". You may use either single quotes `'` or double quotes `"` for property values. You may also use three pipe operators (`|||`) if you need to embed code that contains quotes in a property.
 
 Note that only properties with string values need or accept quotes. Properties that take boolean values (like `ignore`) take the literal `true` or `false` without quotes. Hopefully this is intuitive to most users.
 
@@ -60,6 +60,8 @@ Currently, you can set the following properties in a betwixt block:
 <?btxt+btxt ignore=false filename='scope.md' tag='scope' ?>
 
 Properties are defined with a scope of markdown headings. Parent headings' properties are inherited by children, but don't affect siblings or parents. Global properties (properties with no language set) override unset values on properties with a language set. This should hopefully be intuitive. 
+
+#### Scope Example
 
 Consider the following markdown source. There are not many code blocks here, we are simply focusing on betwixt blocks for properties. Note that the code blocks in this example have the triple backticks "`" replaced with triple single quotes. This is to allow code blocks to reside in github code blocks without further changes. 
 
@@ -115,7 +117,7 @@ print("Hello Foo File!")
 Note that you can never reach the root level of the document once left, so properties set in the root are truly global
 ```
 
-#### Example
+#### Hidden Code Example
 
 <?btxt+go filename="main.go" tag='examples' code=|||package main
 
@@ -162,7 +164,7 @@ Ultimately, I want betwixt to have the following features before I will consider
  - [ ] Simple test runner to create temp directories, execute commands, output success or failure, and cleanup
  - [ ] Insert mode to insert code blocks into a specific point in an existing file
  - [ ] More Markdown flavors and Org Mode syntax support
- - [ ] Support tangling from multiple markdown documents in a heirarchy
+ - [ ] Support tangling from multiple markdown documents in a heirarchy (e.g. an Obsidian vault)
  - [ ] The ability to execute code blocks by tag or id and put the results in the MD file (a la org-babel)
  - [ ] Extension of above, interpolation to allow execution of one block to be input or variable to another block (a la org-babel). This will likely be more simplistic than OB's version.
  
