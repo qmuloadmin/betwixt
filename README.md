@@ -61,7 +61,7 @@ Currently, you can set the following properties in a betwixt block:
 
 Properties are defined with a scope of markdown headings. Parent headings' properties are inherited by children, but don't affect siblings or parents. Global properties (properties with no language set) override unset values on properties with a language set. This should hopefully be intuitive. 
 
-Consider the following markdown source. There are no code blocks here, we are simply focusing on betwixt blocks for properties.
+Consider the following markdown source. There are not many code blocks here, we are simply focusing on betwixt blocks for properties. Note that the code blocks in this example have the triple backticks "`" replaced with triple single quotes. This is to allow code blocks to reside in github code blocks without further changes. 
 
 ```btxt
 The root of the document (no explicit headings set yet) is the parent of all headings
@@ -140,6 +140,14 @@ To tangle you just need to provide the markdown filename, and a destination outp
 `betwixt README.md -o /tmp/`
 
 If you run the above command in the root of this repository, you can then see a complete (albeit painfully simple) go program in `/tmp/main.go`. If you have go installed, you can execute it with `go run /tmp/main.go`
+
+#### Command Line Options
+
+You can use `--help` to get more information on the command line options. This will always be the best place to go for up-to-date usage information. In general, the most useful parameters are:
+
+- `o` or `--outpath` to set the directory to write tangled files to. If a `filename` prop is set to `foo.txt` and `-o` is set to `/tmp/` then code will tangle to `/tmp/foo.txt`
+- `t` to filter by a tag. Only code blocks with that tag set will be tangled
+- `--flavor` will set an optional Markdown flavor. This changes parsing tokens. Right now only `github` is supported, and is the default value. In order to support nested markdown, there is also the `nested` flavor, which is primarily there to allow betwixt to eat its own dog food. 
 
 ## State and Plans
 
