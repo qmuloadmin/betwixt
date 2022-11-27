@@ -137,8 +137,9 @@ Betwixt is still very, painfully premature. It does technically work, but it is 
 
 Ultimately, I want betwixt to have the following features before I will consider it complete:
 
- - [ ] Strict mode to prevent you from doing some things you probably don't intend to (e.g. source blocks that are never tangled)
- - [ ] Prefix and Postfix code properties
+ - [x] Strict mode to prevent you from doing some things you probably don't intend to (e.g. source blocks that are never tangled)
+ - [x] Prefix and Postfix code properties
+ - [ ] Clear and helpful error messages with line numbers
  - [ ] Simple test runner to create temp directories, execute commands, output success or failure, and cleanup
  - [ ] Insert mode to insert code blocks into a specific point in an existing file
  - [ ] More Markdown flavors and Org Mode syntax support
