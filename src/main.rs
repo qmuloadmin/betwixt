@@ -73,7 +73,7 @@ fn tangle(cli: Cli) -> Result<()> {
         .read_to_end(&mut bytes)
         .context("failed reading contents of file")?;
 
-    let mut parsers = match cli.flavor {
+    let parsers = match cli.flavor {
         Flavor::Github => MarkdownParsers {
             code: code("```", "```"),
             section: section('#'),
@@ -87,8 +87,8 @@ fn tangle(cli: Cli) -> Result<()> {
             strict: !cli.no_strict,
         },
     };
-    let markdown = Document::from_contents(&bytes[..], &mut parsers)
-        .context("strict mode: failed to parse")?;
+    let markdown =
+        Document::from_contents(&bytes[..], parsers).context("strict mode: failed to parse")?;
     for block in markdown.code_blocks.iter() {
         if let Some(filter) = cli.tag.as_ref() {
             match block.properties.tag {

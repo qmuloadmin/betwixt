@@ -171,14 +171,15 @@ pub struct Document<'a> {
 impl<'a> Document<'a> {
     pub fn from_contents<P1, P2, P3>(
         contents: &'a [u8],
-        parsers: &mut MarkdownParsers<P1, P2, P3>,
+        parsers: MarkdownParsers<P1, P2, P3>,
     ) -> Result<Self, BetwixtParseError>
     where
         P1: PropertiesParser<'a>,
         P2: SectionParser<'a>,
         P3: CodeParser<'a>,
     {
-        let mut next = scan(contents, true, parsers);
+        let mut parsers = parsers;
+        let mut next = scan(contents, true, &mut parsers);
         let properties = PropertiesCollection {
             global: Properties {
                 ..Default::default()
@@ -291,13 +292,13 @@ impl<'a> Document<'a> {
                             break;
                         }
                     }
-                    next = scan(input, false, parsers);
+                    next = scan(input, false, &mut parsers);
                 }
                 Err(err) => {
                     if parsers.strict {
                         return Err(err);
                     }
-                    next = scan(contents, true, parsers);
+                    next = scan(contents, true, &mut parsers);
                 }
             }
         }
@@ -384,7 +385,7 @@ impl ParseError<&[u8]> for BetwixtParseError {
 pub fn betwixt<'a>(
     start: &'static str,
     end: &'static str,
-) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], (Option<&'a [u8]>, Properties), BetwixtParseError> {
+) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], (Option<&'a [u8]>, Properties), BetwixtParseError> {
     move |i: &[u8]| {
         let (input, (lang, body)) = delimited(
             tag(start),
@@ -473,49 +474,77 @@ impl<'a, T> SectionParser<'a> for T where
     T: Parser<&'a [u8], SectionPart<'a>, nom::error::Error<&'a [u8]>>
 {
 }
-pub trait CodeParser<'a>: Parser<&'a [u8], CodePart<'a>, nom::error::Error<&'a [u8]>> {}
-impl<'a, T> CodeParser<'a> for T where T: Parser<&'a [u8], CodePart<'a>, nom::error::Error<&'a [u8]>>
-{}
+pub trait CodeParser<'a> {
+    fn parse_start(&self, line: &'a [u8]) -> Result<CodePart<'a>, nom::error::Error<&'a [u8]>>;
+    fn parse_end(&self, line: &'a [u8]) -> Result<(), nom::error::Error<&'a [u8]>>;
+}
 
-fn scan<'a, P1, P2, P3>(
-    i: &'a [u8],
-    first: bool,
-    parsers: &mut MarkdownParsers<P1, P2, P3>,
-) -> Result<(&'a [u8], ScanResult<'a>), BetwixtParseError>
-where
-    P1: PropertiesParser<'a>,
-    P2: SectionParser<'a>,
-    P3: CodeParser<'a>,
-{
-    let mut new_line = first;
-    for idx in 0..i.input_len() {
-        if new_line {
-            // these parsers should only match on newlines, not mid-line
-            match parsers.code.parse(&i[idx..]) {
-                Ok(result) => return Ok((result.0, ScanResult::Code(result.1))),
-                Err(_) => {} // continue
+struct LineScanner<'a> {
+    // lines stores the end index of each line in the byte slice
+    // e.g. data[lines[x]] should always be set to \n
+    lines: Vec<usize>,
+    slice: (usize, usize), // the start and end of the current working slice
+    data: &'a [u8],        // all the bytes in the file
+}
+
+impl<'a> LineScanner<'a> {
+    fn scan<P1, P2, P3>(
+        &mut self,
+        parsers: &mut MarkdownParsers<P1, P2, P3>,
+    ) -> Result<ScanResult<'a>, BetwixtParseError>
+    where
+        P1: PropertiesParser<'a>,
+        P2: SectionParser<'a>,
+        P3: CodeParser<'a>,
+    {
+        while self.slice.1 != self.data.len() {
+            let line = match take_until("\n")(&self.data[self.slice.1..]) {
+                Ok((_, line)) => line,
+                Err(_) => &self.data[self.slice.1..],
             };
-            match parsers.section.parse(&i[idx..]) {
-                Ok(result) => return Ok((result.0, ScanResult::Section(result.1))),
-                Err(_) => {} // continue
-            };
-            new_line = false;
-        }
-        match parsers.betwixt.parse(&i[idx..]) {
-            Ok(result) => return Ok((result.0, ScanResult::Properties(result.1))),
-            Err(err) => match err {
-                nom::Err::Failure(err) | nom::Err::Error(err) => match err {
-                    BetwixtParseError::InvalidProperties => return Err(err),
-                    _ => {}
+            self.lines.push(self.slice.1 + line.len());
+            self.slice = (self.slice.0, self.slice.1 + line.len());
+            // these parsers should only match whole lines, never inline
+            match parsers
+                .code
+                .parse_start(&self.data[self.slice.0..self.slice.1])
+            {
+                // code spans multiple lines
+                Ok(result) => match result {
+                    // TODO this is very inefficient to constantly pass one line at a time
+                    // we can definitely improve this for anything that spans multiple lines
+                    ScanLinesResult::Done(code) => {
+                        self.slice = (self.slice.1, self.slice.1 + line.len());
+                        return Ok(ScanResult::Code(code));
+                    }
+                    ScanLinesResult::Incomplete => continue,
                 },
-                _ => panic!("unreachable"), // shouldn't occur when dealing with "complete" types
-            },
+                Err(_) => {} // continue
+            };
+            match parsers
+                .section
+                .parse(&self.data[self.slice.0..self.slice.1])
+            {
+                // sections do not span multiple lines
+                Ok(result) => {
+                    self.slice = (self.slice.1, self.slice.1 + line.len());
+                    return Ok(ScanResult::Section(result.1));
+                }
+                Err(_) => {} // continue
+            };
+            match parsers.betwixt.parse(&i[idx..]) {
+                Ok(result) => return Ok((result.0, ScanResult::Properties(result.1))),
+                Err(err) => match err {
+                    nom::Err::Failure(err) | nom::Err::Error(err) => match err {
+                        BetwixtParseError::InvalidProperties => return Err(err),
+                        _ => {}
+                    },
+                    _ => panic!("unreachable"), // shouldn't occur when dealing with "complete" types
+                },
+            }
         }
-        if i[idx] == 10 {
-            new_line = true;
-        }
+        Ok(ScanResult::End)
     }
-    Ok((&i[i.input_len()..], ScanResult::End))
 }
 
 fn property<'a>(t: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], &[u8]> {
@@ -671,7 +700,7 @@ mod tests {
         let btxt = &b"<?btxt+rust tag='test1'
  mode=\"overwrite\" filename='test/src/lib.rs' code=|||
 print('foo')||| ignore=false  ?>";
-        let mut betwixt = betwixt(BETWIXT_TOKEN, CLOSE_TOKEN);
+        let betwixt = betwixt(BETWIXT_TOKEN, CLOSE_TOKEN);
         let res = betwixt(&btxt[..]);
         assert!(res.is_ok(), "valid betwixt body should parse successfully");
         let props = res.unwrap().1;
@@ -728,14 +757,14 @@ func main() {"[..]
     fn test_strict_mode_properties() {
         let contents = &b"Some stuff that doesn't matter
 <?btxt filename='foo' tog='bad' ?>"[..];
-        let mut parsers = MarkdownParsers {
+        let parsers = MarkdownParsers {
             code: code("```", "```"),
             section: section('#'),
             betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
             strict: true,
         };
 
-        assert!(Document::from_contents(contents, &mut parsers).is_err());
+        assert!(Document::from_contents(contents, parsers).is_err());
     }
 
     #[test]
@@ -870,7 +899,7 @@ And this isn't code anymore
 
     #[test]
     fn test_section_composition() {
-        let mut parsers = MarkdownParsers {
+        let parsers = MarkdownParsers {
             code: code("```", "```"),
             section: section('#'),
             betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
@@ -916,7 +945,7 @@ This code block shouldn't be included
 PrInTlN('foo');
 ```
 Ignore all this fluff";
-        let doc = Document::from_contents(&markdown[..], &mut parsers).unwrap();
+        let doc = Document::from_contents(&markdown[..], parsers).unwrap();
         let root = doc.root;
         assert_eq!(2, root.children.len());
         // children[0] Section 2A
