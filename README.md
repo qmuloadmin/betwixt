@@ -42,6 +42,8 @@ You can also configure properties that only apply to code blocks of a certain la
 
 Which usually makes more sense, unless all your code blocks in a given file will be the same language. 
 
+> Note that these betwixt blocks must start a line (although, technically, they don't have to also end a line). This is an implementation detail that also aligns with the behavior of other markdown flavors -- many heading and code blocks must also start a line. It is subject to change, however. 
+
 #### Properties
 
 Currently, you can set the following properties in a betwixt block:
@@ -57,11 +59,11 @@ Currently, you can set the following properties in a betwixt block:
  
 #### Scope
 
-<?btxt+btxt ignore=false filename='scope.md' tag='scope' ?>
-
 Properties are defined with a scope of markdown headings. Parent headings' properties are inherited by children, but don't affect siblings or parents. Global properties (properties with no language set) override unset values on properties with a language set. This should hopefully be intuitive. 
 
 #### Scope Example
+
+<?btxt+btxt ignore=false filename='scope.md' tag='scope' ?>
 
 Consider the following markdown source. There are not many code blocks here, we are simply focusing on betwixt blocks for properties. Note that the code blocks in this example have the triple backticks "`" replaced with triple single quotes. This is to allow code blocks to reside in github code blocks without further changes. 
 
@@ -153,13 +155,13 @@ You can use `--help` to get more information on the command line options. This w
 
 ## State and Plans
 
-Betwixt is still very, painfully premature. It does technically work, but it is going to be very rough around the edges, with unhelpful crash error messages in the case of a misconfigured markdown source. It'll also likely have a few fundamental bugs, and maybe even (*gasp*) some bad design decisions. Use at your own risk at the moment.
+Betwixt is still very, painfully premature. It does technically work, but it is going to be very rough around the edges with assumptions around utf8-encoded files, among other things. It'll also likely have a few fundamental bugs, and maybe even (*gasp*) some bad design decisions. Use at your own risk at the moment.
 
 Ultimately, I want betwixt to have the following features before I will consider it complete:
 
  - [x] Strict mode to prevent you from doing some things you probably don't intend to (e.g. source blocks that are never tangled)
  - [x] Prefix and Postfix code properties
- - [ ] Clear and helpful error messages with line numbers
+ - [x] Clear and helpful error messages with line numbers
  - [ ] Unicode-aware parsing instead of bytes with several unicode encoding support
  - [ ] Simple test runner to create temp directories, execute commands, output success or failure, and cleanup
  - [ ] Insert mode to insert code blocks into a specific point in an existing file
