@@ -9,10 +9,10 @@ use std::process;
 use std::str::from_utf8;
 
 use anyhow::{anyhow, Context, Result};
+use betwixt_parse::TangleMode;
 use betwixt_parse::{
     betwixt, code, section, Document, MarkdownParsers, BETWIXT_TOKEN, CLOSE_TOKEN,
 };
-use betwixt_parse::{InvalidMatchDetails, TangleMode};
 use clap::{Parser, ValueEnum};
 
 #[derive(ValueEnum, Clone)]
