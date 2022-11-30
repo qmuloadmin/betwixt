@@ -208,14 +208,14 @@ pub enum LineParseResult<'a> {
 
 #[derive(Debug)]
 // The error result of any LineParser
-pub enum LineParseError {
+pub enum LineParseError<'a> {
     // Not really an error, just indicates the parser didn't match this line (move on)
     NoMatch,
     // We matched start/end tokens but the body had invalid contents. Check strict mode
-    InvalidMatch,
+    InvalidMatch(&'a [u8]),
 }
 
-impl<'a> ParseError<&'a [u8]> for LineParseError {
+impl<'a> ParseError<&'a [u8]> for LineParseError<'a> {
     fn from_error_kind(_input: &'a [u8], _kind: nom::error::ErrorKind) -> Self {
         LineParseError::NoMatch
     }
@@ -247,8 +247,8 @@ impl Display for InvalidMatchDetails {
 // TODO the line parser approach is very inefficient with long multi line strings
 // as it has to continually try and parse for each line. We can improve this, just need
 // more sophisticated types
-pub trait LineParser<'a>: Parser<&'a [u8], LineParseResult<'a>, LineParseError> {}
-impl<'a, F> LineParser<'a> for F where F: Parser<&'a [u8], LineParseResult<'a>, LineParseError> {}
+pub trait LineParser<'a>: Parser<&'a [u8], LineParseResult<'a>, LineParseError<'a>> {}
+impl<'a, F> LineParser<'a> for F where F: Parser<&'a [u8], LineParseResult<'a>, LineParseError<'a>> {}
 
 struct LineScanner<'a> {
     // lines stores the end index of each line in the byte slice
@@ -300,13 +300,11 @@ impl<'a> LineScanner<'a> {
                         match err {
                             nom::Err::Incomplete(_) => panic!("unreachable in complete parsers"),
                             nom::Err::Error(err) | nom::Err::Failure(err) => match err {
-                                LineParseError::InvalidMatch => {
+                                LineParseError::InvalidMatch(bytes) => {
                                     return Err(InvalidMatchDetails {
                                         line_start: self.block_start,
                                         line_end: self.lines.len(),
-                                        line: from_utf8(&self.data[self.slice.0..self.slice.1])
-                                            .unwrap()
-                                            .to_string(),
+                                        line: from_utf8(&bytes).unwrap().to_string(),
                                     })
                                 }
                                 LineParseError::NoMatch => {
@@ -404,8 +402,8 @@ tog='bad' ?>"[..];
         match result {
             Err(err) => assert_eq!(
                 err.to_string(),
-                "invalid properties from line 4 to line 5: <?btxt filename='foo'
-tog='bad' ?>"
+                "invalid properties from line 4 to line 5: 
+tog='bad' "
             ),
             Ok(_) => panic!("unreachable"),
         }

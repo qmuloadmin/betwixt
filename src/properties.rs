@@ -91,7 +91,7 @@ impl<'a> Properties<'a> {
 pub fn betwixt<'a>(
     start: &'static str,
     end: &'static str,
-) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], LineParseResult<'a>, LineParseError> {
+) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], LineParseResult<'a>, LineParseError<'a>> {
     move |i: &[u8]| {
         let (input, _) = tag(start)(i)?;
         let (input, (lang, body)) = match terminated(
@@ -108,8 +108,12 @@ pub fn betwixt<'a>(
             Ok(result) => result,
             Err(_) => return Ok((input, LineParseResult::PartialMatch)),
         };
-        let properties =
-            properties(body).map_err(|_| nom::Err::Failure(LineParseError::InvalidMatch))?;
+        let properties = properties(body).map_err(|err| match err {
+            nom::Err::Failure(err) | nom::Err::Error(err) => {
+                nom::Err::Failure(LineParseError::InvalidMatch(err.input))
+            }
+            _ => panic!("unreachable when dealing with complete bytes"),
+        })?;
         Ok((
             input,
             LineParseResult::Matched(ScanResult::Properties((lang, properties.1))),
@@ -233,7 +237,7 @@ where
     }
 }
 
-fn properties(i: &[u8]) -> IResult<&[u8], Properties> {
+fn properties<'a>(i: &'a [u8]) -> IResult<&'a [u8], Properties> {
     let fname = property(FILENAME_PROP);
     let tag = property(TAG_PROP);
     let mode = property(TANGLE_MODE_PROP);
