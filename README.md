@@ -145,7 +145,7 @@ Code can be executed by using the `-e` flag and providing a comma-separated list
 
 The ID of a codeblock is simply an optional alphanumeric string (no other chars allowed) following the language in the markdown block, as shown below (view source to see it).
 
-It can be very useful for providing readable snippets of code to the end user, but being able to execute them, even in langauges where small snippets are not valid programs. 
+It can be very useful for providing readable snippets of code to the end user, but being able to execute them, even in langauges where small snippets are not valid programs. For instance, to execute the code block below, which is not a valid rust program by itself, execute `btxt README.md -o /tmp/ -e hellorust`
 
 <?btxt+rust mode='overwrite' tag='exec' filename='main.rs' pre=|||fn main() {||| post=|||}||| cmd=|||rustc main.go && ./main||| ?>
 
