@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::fmt::Display;
 use std::fs::{self, File, OpenOptions};
@@ -11,7 +12,7 @@ use std::str::from_utf8;
 use anyhow::{anyhow, Context, Result};
 use betwixt_parse::TangleMode;
 use betwixt_parse::{
-    betwixt, code, section, Document, MarkdownParsers, BETWIXT_TOKEN, CLOSE_TOKEN,
+    betwixt, code, section, Code, Document, MarkdownParsers, BETWIXT_TOKEN, CLOSE_TOKEN,
 };
 use clap::{Parser, ValueEnum};
 
@@ -45,16 +46,56 @@ impl Display for Flavor {
 struct Cli {
     file: PathBuf,
     #[arg(short = 'o', long = "outpath")]
+    /// The root directory to write all files to
     output_dir: Option<PathBuf>,
     #[arg(long = "no-strict")]
+    /// Ignore certain errors that are probably a bad thing
     no_strict: bool,
     #[arg(short = 't')]
+    /// Only Tangle blocks with this tag
     tag: Option<String>,
     #[arg(long = "flavor", default_value_t = Flavor::Github)]
+    /// The markdown flavor to use for parsing (usually ignore this)
     flavor: Flavor,
+    #[arg(short = 'e')]
+    /// A list of block IDs that should be executed in addition to being tangled
+    execute: Option<Vec<String>>,
+}
+
+fn execute(block: &Code, exec_ids: &HashSet<String>) -> Result<Option<String>> {
+    if let Some(id) = &block.part.id {
+        let id = from_utf8(&id).unwrap();
+        if exec_ids.contains(id) {
+            let cmd = block
+                .properties
+                .cmd
+                .context(format!("specified exec id {} has no cmd specified", id))?;
+            let cmd = from_utf8(cmd).unwrap();
+            let cmds = cmd.split("&&").into_iter();
+            let mut output: Vec<u8> = Vec::new();
+            for cmd in cmds {
+                let cmd: Vec<&str> = cmd.split_whitespace().collect();
+                let mut command = std::process::Command::new(cmd[0]);
+                output = command
+                    .args(&cmd[1..cmd.len()])
+                    .output()
+                    .context(format!("failed executing command for id {}", id))?
+                    .stdout;
+            }
+            Ok(Some(from_utf8(&output).unwrap().to_owned()))
+        } else {
+            Ok(None)
+        }
+    } else {
+        Ok(None)
+    }
 }
 
 fn tangle(cli: Cli) -> Result<()> {
+    let exec_ids = match cli.execute {
+        Some(ids) => ids.into_iter().collect(),
+        None => HashSet::new(),
+    };
     let out_dir = cli.output_dir.unwrap_or(
         env::current_dir().context("betwixt must be in a directory or must specify --output")?,
     );
@@ -66,6 +107,7 @@ fn tangle(cli: Cli) -> Result<()> {
         ));
     };
     let file = File::open(cli.file).context("unable to open input file")?;
+    std::env::set_current_dir(&out_dir).context("unable to change to output directory")?;
 
     let mut reader = BufReader::new(file);
     let mut bytes = Vec::new();
@@ -140,6 +182,11 @@ fn tangle(cli: Cli) -> Result<()> {
                 if let Some(postfix) = block.properties.postfix {
                     file.write_all(postfix)
                         .context("failed to write postfix for code block to file")?;
+                }
+                // If execute was set, and the IDs provided match this block's ID, then execute this block's cmd
+                match execute(block, &exec_ids)? {
+                    Some(output) => print!("{}", output),
+                    None => (),
                 }
             } else {
                 if !cli.no_strict {

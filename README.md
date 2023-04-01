@@ -52,6 +52,8 @@ Currently, you can set the following properties in a betwixt block:
  - `mode` indicates the write mode for writing to the files. By default it is `append`. Currently also supported is `overwrite`.
  - `tag` sets a tag, just a string, on the code block(s). This allows filtering on the command line to only tangle code with a certain tag. Additional functionality around tags is likely coming soon.
  - `ignore` indicates that the code block should not be tangled, and should be left alone
+ - `cmd` The command to execute when `-e` is passed
+  - Note that cmd must not contain arguments with spaces (e.g. a filename with spaces in it) as no attempt to escape spaces is respected. You may have multiple commands with `&&`
  - `prefix` sets a code block to be written to file _before_ contents in visible code blocks are written. This is good for hiding boilerplate.
  - `postfix` sets a code block to be written to file _after_ contents in visible code blocks are written.
  
@@ -137,6 +139,20 @@ fmt.Println("Hello, Betwixt!")
 
 <?btxt+go code='}' ?>
 
+#### Executing Code Example
+
+Code can be executed by using the `-e` flag and providing a comma-separated list of IDs. These IDs must align with the ID of a code block included in the tangled blocks (e.g. must not be excluded in a tag that was filtered out). 
+
+The ID of a codeblock is simply an optional alphanumeric string (no other chars allowed) following the language in the markdown block, as shown below (view source to see it).
+
+It can be very useful for providing readable snippets of code to the end user, but being able to execute them, even in langauges where small snippets are not valid programs. 
+
+<?btxt+rust mode='overwrite' tag='exec' filename='main.rs' pre=|||fn main() {||| post=|||}||| cmd=|||rustc main.go && ./main||| ?>
+
+```rust hellorust
+println!("Hello, Rust!");
+```
+
 ### Tangling Markdown
 
 To tangle you just need to provide the markdown filename, and a destination output directory. You can use this README as the source.
@@ -162,12 +178,13 @@ Ultimately, I want betwixt to have the following features before I will consider
  - [x] Strict mode to prevent you from doing some things you probably don't intend to (e.g. source blocks that are never tangled)
  - [x] Prefix and Postfix code properties
  - [x] Clear and helpful error messages with line numbers
- - [ ] Unicode-aware parsing instead of bytes with several unicode encoding support
+ - [ ] Unicode-aware parsing instead of bytes with support for several encodings
  - [ ] Simple test runner to create temp directories, execute commands, output success or failure, and cleanup
  - [ ] Insert mode to insert code blocks into a specific point in an existing file
  - [ ] More Markdown flavors and Org Mode syntax support
  - [ ] Support tangling from multiple markdown documents in a heirarchy (e.g. an Obsidian vault)
- - [ ] The ability to execute code blocks by tag or id and put the results in the MD file (a la org-babel)
+ - [x] The ability to execute code blocks by tag or id 
+ - [ ] ... and put the results in the MD file (a la org-babel)
  - [ ] Extension of above, interpolation to allow execution of one block to be input or variable to another block (a la org-babel). This will likely be more simplistic than OB's version.
  
 ### Wait, Tangles?

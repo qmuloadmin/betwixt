@@ -20,6 +20,7 @@ const TANGLE_MODE_PROP: &'static str = "mode";
 const IGNORE_PROP: &'static str = "ignore";
 const PREFIX_PROP: &'static str = "pre";
 const POSTFIX_PROP: &'static str = "post";
+const CMD_PROP: &'static str = "cmd";
 
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct Properties<'a> {
@@ -29,6 +30,7 @@ pub struct Properties<'a> {
     pub ignore: Option<bool>,
     pub prefix: Option<&'a [u8]>,
     pub postfix: Option<&'a [u8]>,
+    pub cmd: Option<&'a [u8]>,
     // TODO there is an alternative where parsing properties with code
     // simply returns a code block with the applied properties. At the moment,
     // though, this is the solution that seems less hacky
@@ -84,6 +86,9 @@ impl<'a> Properties<'a> {
         }
         if self.postfix.is_none() {
             self.postfix = parent.postfix;
+        }
+        if self.cmd.is_none() {
+            self.cmd = parent.cmd;
         }
     }
 }
@@ -155,12 +160,13 @@ fn bool_property<'a>(t: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], bool> 
 // all have matched or all remaining fail. Returns None for any unmatches parsers
 // TODO make this a macro cause this is silly.
 fn opt_permutation<P, PBOOL, I, O, OBOOL, E>(
-    mut parsers: (P, P, P, P, P, P, PBOOL),
+    mut parsers: (P, P, P, P, P, P, P, PBOOL),
 ) -> impl FnMut(
     I,
 ) -> IResult<
     I,
     (
+        Option<O>,
         Option<O>,
         Option<O>,
         Option<O>,
@@ -179,7 +185,7 @@ where
 {
     move |i: I| {
         let mut success = true;
-        let mut results = (None, None, None, None, None, None, None);
+        let mut results = (None, None, None, None, None, None, None, None);
         let mut input = i;
         while success {
             success = false;
@@ -232,6 +238,13 @@ where
                     input = i;
                 }
             }
+            if results.7.is_none() {
+                if let Ok((i, output)) = parsers.7.parse(input.clone()) {
+                    results.7 = Some(output);
+                    success = true;
+                    input = i;
+                }
+            }
         }
         Ok((input, results))
     }
@@ -245,8 +258,9 @@ fn properties<'a>(i: &'a [u8]) -> IResult<&'a [u8], Properties> {
     let ignore = bool_property(IGNORE_PROP);
     let prefix = property(PREFIX_PROP);
     let postfix = property(POSTFIX_PROP);
-    let (input, (filename, prefix, postfix, tag, mode, code, ignore)) = all_consuming(
-        opt_permutation((fname, prefix, postfix, tag, mode, code, ignore)),
+    let cmd = property(CMD_PROP);
+    let (input, (filename, cmd, prefix, postfix, tag, mode, code, ignore)) = all_consuming(
+        opt_permutation((fname, cmd, prefix, postfix, tag, mode, code, ignore)),
     )(i)?;
     Ok((
         input,
@@ -260,6 +274,7 @@ fn properties<'a>(i: &'a [u8]) -> IResult<&'a [u8], Properties> {
                 None => None,
             },
             code,
+            cmd,
             ignore,
         },
     ))

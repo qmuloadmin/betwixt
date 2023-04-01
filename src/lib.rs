@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display};
 use std::mem;
@@ -13,6 +13,7 @@ mod properties;
 mod section;
 
 pub use code::code;
+pub use code::Code;
 use code::*;
 use nom::error::ParseError;
 use properties::*;
@@ -27,6 +28,7 @@ pub const CLOSE_COM_TOKEN: &'static str = "-->";
 
 pub struct Document<'a> {
     pub code_blocks: Vec<Code<'a>>,
+    ids: HashSet<&'a [u8]>,
     pub root: Section<'a>,
 }
 
@@ -34,13 +36,14 @@ impl<'a> Document<'a> {
     pub fn from_contents<P1, P2, P3>(
         contents: &'a [u8],
         parsers: MarkdownParsers<P1, P2, P3>,
-    ) -> Result<Self, InvalidMatchDetails>
+    ) -> Result<Self, DocumentError>
     where
         P1: LineParser<'a>,
         P2: LineParser<'a>,
         P3: LineParser<'a>,
     {
         let mut parser = alt((parsers.code, parsers.section, parsers.betwixt));
+        let mut ids = HashSet::new();
         let mut scanner = LineScanner::new(contents, parsers.strict);
         let mut next = scanner.scan(&mut parser);
         let properties = PropertiesCollection {
@@ -125,6 +128,14 @@ impl<'a> Document<'a> {
                             }
                         }
                         ScanResult::Code(code) => {
+                            if let Some(id) = code.id {
+                                if ids.contains(id) {
+                                    return Err(DocumentError::DuplicateID(
+                                        from_utf8(id).unwrap().into(),
+                                    ));
+                                }
+                                ids.insert(id);
+                            }
                             let props = section.properties.get_code_props(code.lang);
                             if !props.ignore.unwrap_or(false) {
                                 section.code_block_indexes.push(blocks.len());
@@ -142,6 +153,7 @@ impl<'a> Document<'a> {
                                 let props = section.properties.get_code_props(lang);
                                 blocks.push(Code {
                                     part: CodePart {
+                                        id: None,
                                         lang,
                                         contents: code,
                                     },
@@ -157,7 +169,7 @@ impl<'a> Document<'a> {
                     }
                     next = scanner.scan(&mut parser);
                 }
-                Err(err) => return Err(err),
+                Err(err) => return Err(DocumentError::InvalidMatch(err)),
             }
         }
         section_frame[section.part.level]
@@ -175,6 +187,7 @@ impl<'a> Document<'a> {
                     None => {
                         return Ok(Document {
                             code_blocks: blocks,
+                            ids,
                             root: child,
                         })
                     }
@@ -222,6 +235,27 @@ impl<'a> ParseError<&'a [u8]> for LineParseError<'a> {
 
     fn append(_input: &'a [u8], _kind: nom::error::ErrorKind, other: Self) -> Self {
         other
+    }
+}
+
+#[derive(Debug)]
+pub enum DocumentError {
+    InvalidMatch(InvalidMatchDetails),
+    DuplicateID(String),
+}
+
+impl Error for DocumentError {}
+
+impl Display for DocumentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self {
+                DocumentError::InvalidMatch(im) => format!("{}", im),
+                DocumentError::DuplicateID(id) => format!("re-used code block id: {}", id),
+            }
+        )
     }
 }
 

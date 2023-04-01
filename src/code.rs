@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use nom::bytes::complete::{tag, take_until};
-use nom::character::complete::{alpha1, newline, space0};
+use nom::character::complete::{alpha1, alphanumeric1, newline, space0};
 use nom::combinator::opt;
 use nom::sequence::tuple;
 use nom::{IResult, InputLength, InputTake, Parser};
@@ -20,6 +20,7 @@ pub struct Code<'a> {
 pub struct CodePart<'a> {
     pub contents: &'a [u8],
     pub lang: Option<&'a [u8]>,
+    pub id: Option<&'a [u8]>,
 }
 
 // Locate the index at which point a parser succeeded (returned Ok).
@@ -35,8 +36,6 @@ where
                 Err(_) => {}
             }
         }
-        // FIXME We need some way to bounds check -- we'll always have a last_err
-        // as long as the input length wasn't 0
         None
     }
 }
@@ -46,7 +45,13 @@ pub fn code<'a>(
     code_end: &'static str,
 ) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], LineParseResult<'a>, LineParseError> {
     move |i: &[u8]| {
-        let (input, (_, lang, _, _)) = tuple((tag(code_start), opt(alpha1), space0, tag("\n")))(i)?;
+        let (input, (_, lang, _, id, _)) = tuple((
+            tag(code_start),
+            opt(alpha1),
+            space0,
+            opt(alphanumeric1),
+            tag("\n"),
+        ))(i)?;
         let mut terminator = locate_parser_match(tuple((
             tag(code_end),
             space0::<&'a [u8], nom::error::Error<&'a [u8]>>,
@@ -62,6 +67,7 @@ pub fn code<'a>(
         Ok((
             excess,
             LineParseResult::Matched(ScanResult::Code(CodePart {
+                id,
                 contents: &input[..end_idx],
                 lang,
             })),
