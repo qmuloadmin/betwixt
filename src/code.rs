@@ -1,7 +1,8 @@
 use std::fmt::Debug;
 
-use nom::bytes::complete::{tag, take_until};
-use nom::character::complete::{alpha1, alphanumeric1, newline, space0};
+use nom::bytes::complete::{tag, take_until, take_while};
+use nom::character::complete::{alpha1, newline, space0};
+use nom::character::is_alphanumeric;
 use nom::combinator::opt;
 use nom::sequence::tuple;
 use nom::{IResult, InputLength, InputTake, Parser};
@@ -45,13 +46,18 @@ pub fn code<'a>(
     code_end: &'static str,
 ) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], LineParseResult<'a>, LineParseError> {
     move |i: &[u8]| {
-        let (input, (_, lang, _, id, _)) = tuple((
+        let (input, (_, lang, _, raw_id, _)) = tuple((
             tag(code_start),
             opt(alpha1),
             space0,
-            opt(alphanumeric1),
+            take_until("\n"),
             tag("\n"),
         ))(i)?;
+        let id = if raw_id.len() > 0 {
+            Some(take_while(is_alphanumeric)(raw_id)?.1)
+        } else {
+            None
+        };
         let mut terminator = locate_parser_match(tuple((
             tag(code_end),
             space0::<&'a [u8], nom::error::Error<&'a [u8]>>,

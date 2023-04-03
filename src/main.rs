@@ -17,6 +17,27 @@ use betwixt_parse::{
 use clap::{Parser, ValueEnum};
 
 #[derive(ValueEnum, Clone)]
+enum Mode {
+    // Write code blocks out to individual, specified files
+    Tangle,
+    // Explain the structure of the Markdown file, as significant to Betwixt. Primarily useful for troubleshooting
+    Describe,
+}
+
+impl Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match &self {
+                Mode::Tangle => "tangle",
+                Mode::Describe => "describe",
+            }
+        )
+    }
+}
+
+#[derive(ValueEnum, Clone)]
 enum Flavor {
     // markdown used by github and many others
     Github,
@@ -44,6 +65,7 @@ impl Display for Flavor {
 #[command(name = "betwixt")]
 #[command(author, version, about)]
 struct Cli {
+    /// The markdown file to parse as input
     file: PathBuf,
     #[arg(short = 'o', long = "outpath")]
     /// The root directory to write all files to
@@ -60,6 +82,9 @@ struct Cli {
     #[arg(short = 'e')]
     /// A list of block IDs that should be executed in addition to being tangled
     execute: Option<Vec<String>>,
+    /// The mode of operation of betwixt
+    #[arg(short = 'm', default_value_t = Mode::Tangle)]
+    mode: Mode,
 }
 
 fn execute(block: &Code, exec_ids: &HashSet<String>) -> Result<Option<String>> {
@@ -131,80 +156,91 @@ fn tangle(cli: Cli) -> Result<()> {
     };
     let markdown =
         Document::from_contents(&bytes[..], parsers).context("strict mode: failed to parse")?;
-    for block in markdown.code_blocks.iter() {
-        if let Some(filter) = cli.tag.as_ref() {
-            match block.properties.tag {
-                Some(tag) => {
-                    if from_utf8(tag).context("failed to parse tag as utf8")? != filter {
+    match cli.mode {
+        Mode::Describe => {
+            let output = markdown
+                .describe(&markdown.root)
+                .context("failed building describe output")?;
+            println!("{}", output);
+        }
+        Mode::Tangle => {
+            for block in markdown.code_blocks.iter() {
+                if let Some(filter) = cli.tag.as_ref() {
+                    match block.properties.tag {
+                        Some(tag) => {
+                            if from_utf8(tag).context("failed to parse tag as utf8")? != filter {
+                                continue;
+                            }
+                        }
+                        None => continue,
+                    }
+                }
+                // FIXME don't repeatedly open and write files. Do it once. This is easier for now
+                // FIXME don't just use utf8 blindly on filenames
+                if let Some(mode) = &block.properties.mode {
+                    if let Some(filename) = block.properties.filename {
+                        let mut file = match mode {
+                            TangleMode::Overwrite => {
+                                let mut path = out_dir.clone();
+                                path.push(from_utf8(filename).unwrap());
+                                OpenOptions::new()
+                                    .create(true)
+                                    .write(true)
+                                    .truncate(true)
+                                    .open(path)
+                                    .unwrap()
+                            }
+                            TangleMode::Append => {
+                                let mut path = out_dir.clone();
+                                path.push(from_utf8(filename).unwrap());
+                                OpenOptions::new()
+                                    .write(true)
+                                    .append(true)
+                                    .open(path)
+                                    .unwrap()
+                            }
+                            TangleMode::Prepend => {
+                                panic!("prepend mode is unimplemented");
+                            }
+                            TangleMode::Insert(_) => {
+                                panic!("insert mode is unimplemented");
+                            }
+                        };
+                        if let Some(prefix) = block.properties.prefix {
+                            file.write_all(prefix)
+                                .context("failed to write prefix for code block to file")?;
+                        }
+                        file.write_all(block.part.contents)
+                            .context("failed to write code block to file")?;
+                        if let Some(postfix) = block.properties.postfix {
+                            file.write_all(postfix)
+                                .context("failed to write postfix for code block to file")?;
+                        }
+                        // If execute was set, and the IDs provided match this block's ID, then execute this block's cmd
+                        match execute(block, &exec_ids)? {
+                            Some(output) => print!("{}", output),
+                            None => (),
+                        }
+                    } else {
+                        if !cli.no_strict {
+                            return Err(anyhow!(
+                                "code block without filename found, strict mode enforced"
+                            ));
+                        }
                         continue;
                     }
-                }
-                None => continue,
+                } else {
+                    if !cli.no_strict {
+                        return Err(anyhow!(
+                            "code block without mode found, strict mode enforced"
+                        ));
+                    }
+                    continue;
+                };
             }
         }
-        // FIXME don't repeatedly open and write files. Do it once. This is easier for now
-        // FIXME don't just use utf8 blindly on filenames
-        if let Some(mode) = &block.properties.mode {
-            if let Some(filename) = block.properties.filename {
-                let mut file = match mode {
-                    TangleMode::Overwrite => {
-                        let mut path = out_dir.clone();
-                        path.push(from_utf8(filename).unwrap());
-                        OpenOptions::new()
-                            .create(true)
-                            .write(true)
-                            .truncate(true)
-                            .open(path)
-                            .unwrap()
-                    }
-                    TangleMode::Append => {
-                        let mut path = out_dir.clone();
-                        path.push(from_utf8(filename).unwrap());
-                        OpenOptions::new()
-                            .write(true)
-                            .append(true)
-                            .open(path)
-                            .unwrap()
-                    }
-                    TangleMode::Prepend => {
-                        panic!("prepend mode is unimplemented");
-                    }
-                    TangleMode::Insert(_) => {
-                        panic!("insert mode is unimplemented");
-                    }
-                };
-                if let Some(prefix) = block.properties.prefix {
-                    file.write_all(prefix)
-                        .context("failed to write prefix for code block to file")?;
-                }
-                file.write_all(block.part.contents)
-                    .context("failed to write code block to file")?;
-                if let Some(postfix) = block.properties.postfix {
-                    file.write_all(postfix)
-                        .context("failed to write postfix for code block to file")?;
-                }
-                // If execute was set, and the IDs provided match this block's ID, then execute this block's cmd
-                match execute(block, &exec_ids)? {
-                    Some(output) => print!("{}", output),
-                    None => (),
-                }
-            } else {
-                if !cli.no_strict {
-                    return Err(anyhow!(
-                        "code block without filename found, strict mode enforced"
-                    ));
-                }
-                continue;
-            }
-        } else {
-            if !cli.no_strict {
-                return Err(anyhow!(
-                    "code block without mode found, strict mode enforced"
-                ));
-            }
-            continue;
-        };
-    }
+    };
+
     Ok(())
 }
 

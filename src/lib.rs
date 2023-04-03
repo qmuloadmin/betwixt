@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display};
 use std::mem;
-use std::str::from_utf8;
+use std::str::{from_utf8, Utf8Error};
 
 use nom::branch::alt;
 use nom::bytes::complete::take_until;
@@ -195,6 +195,63 @@ impl<'a> Document<'a> {
             }
         }
         panic!("unreachable");
+    }
+
+    pub fn describe(&self, section: &Section) -> Result<String, Utf8Error> {
+        let padding = if section.part.level > 0 {
+            " | ".repeat(section.part.level)
+        } else {
+            "".into()
+        };
+        let mut sections = Vec::new();
+        sections.push(format!(
+            "{}#{}\n",
+            padding,
+            match section.part.heading {
+                None => " -- ",
+                Some(heading) => from_utf8(heading)?,
+            }
+        ));
+        for &idx in section.code_block_indexes.iter() {
+            sections.push(format!(
+                "{} {} {} {} {} {} {}\n",
+                padding,
+                match self.code_blocks[idx].properties.cmd {
+                    None => "-",
+                    Some(_) => "x",
+                },
+                match self.code_blocks[idx].properties.tag {
+                    Some(tag) => format!("[{}]", from_utf8(tag)?),
+                    None => "".into(),
+                },
+                match self.code_blocks[idx].part.lang {
+                    Some(lang) => from_utf8(lang)?,
+                    None => "unspecified",
+                },
+                match self.code_blocks[idx].part.id {
+                    None => "anonymous code block".to_owned(),
+                    Some(id) => format!("code block with id '{}'", from_utf8(id)?),
+                },
+                match &self.code_blocks[idx].properties.mode {
+                    None => "overwrites!",
+                    Some(mode) => match mode {
+                        TangleMode::Overwrite => "overwrites",
+                        TangleMode::Append => "appends to",
+                        TangleMode::Prepend => "prepends to",
+                        TangleMode::Insert(_) => "inserts into",
+                    },
+                },
+                match self.code_blocks[idx].properties.filename {
+                    None => "**No Filename**",
+                    Some(fname) => from_utf8(fname)?,
+                }
+            ))
+        }
+        let mut output: String = sections.into_iter().collect();
+        for child in section.children.iter() {
+            output += &self.describe(child)?;
+        }
+        Ok(output)
     }
 }
 
