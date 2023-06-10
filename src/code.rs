@@ -22,6 +22,7 @@ pub struct CodePart<'a> {
     pub contents: &'a [u8],
     pub lang: Option<&'a [u8]>,
     pub id: Option<&'a [u8]>,
+	pub prop_line: Option<&'a [u8]>
 }
 
 // Locate the index at which point a parser succeeded (returned Ok).
@@ -53,10 +54,11 @@ pub fn code<'a>(
             take_until("\n"),
             tag("\n"),
         ))(i)?;
-        let id = if raw_id.len() > 0 {
-            Some(take_while(is_alphanumeric)(raw_id)?.1)
+        let (id, prop_line) = if raw_id.len() > 0 {
+			let line = take_while(is_alphanumeric)(raw_id)?;
+            (Some(line.1), Some(line.0))
         } else {
-            None
+            (None, None)
         };
         let mut terminator = locate_parser_match(tuple((
             tag(code_end),
@@ -76,6 +78,7 @@ pub fn code<'a>(
                 id,
                 contents: &input[..end_idx],
                 lang,
+				prop_line
             })),
         ))
     }

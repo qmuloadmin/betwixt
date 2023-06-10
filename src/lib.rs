@@ -16,10 +16,11 @@ pub use code::code;
 pub use code::Code;
 use code::*;
 use nom::error::ParseError;
-use properties::*;
-pub use properties::{betwixt, TangleMode};
+pub use properties::{betwixt, TangleMode, properties as extract_props};
 pub use section::section;
 use section::*;
+
+use crate::properties::Properties;
 
 pub const BETWIXT_TOKEN: &'static str = "<?btxt";
 pub const BETWIXT_COM_TOKEN: &'static str = "<!--btxt";
@@ -136,7 +137,18 @@ impl<'a> Document<'a> {
                                 }
                                 ids.insert(id);
                             }
-                            let props = section.properties.get_code_props(code.lang);
+                            let mut props = section.properties.get_code_props(code.lang);
+							props = if let Some(prop_line) = code.prop_line {
+								match extract_props(prop_line) {
+									Ok((_, mut properties)) => {
+										properties.merge(&props);
+										properties
+									},
+									Err(_) => props
+								}
+							} else {
+								props
+							};
                             if !props.ignore.unwrap_or(false) {
                                 section.code_block_indexes.push(blocks.len());
                                 blocks.push(Code {
@@ -156,6 +168,7 @@ impl<'a> Document<'a> {
                                         id: None,
                                         lang,
                                         contents: code,
+										prop_line: None,
                                     },
                                     properties: props,
                                 })

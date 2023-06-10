@@ -250,7 +250,7 @@ where
     }
 }
 
-fn properties<'a>(i: &'a [u8]) -> IResult<&'a [u8], Properties> {
+pub fn properties<'a>(i: &'a [u8]) -> IResult<&'a [u8], Properties> {
     let fname = property(FILENAME_PROP);
     let tag = property(TAG_PROP);
     let mode = property(TANGLE_MODE_PROP);
