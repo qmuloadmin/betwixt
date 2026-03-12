@@ -104,30 +104,55 @@ pub fn betwixt<'a>(
 ) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], LineParseResult<'a>, LineParseError<'a>> {
     move |i: &[u8]| {
         let (input, _) = tag(start)(i)?;
-        let (input, (lang, body)) = match terminated(
-            pair(
-                opt(preceded(
-                    tag::<&str, &'a [u8], nom::error::Error<&'a [u8]>>("+"),
-                    take_while(is_alphanumeric),
-                )),
-                take_until(end),
-            ),
-            tag(end),
-        )(input)
-        {
-            Ok(result) => result,
-            Err(_) => return Ok((input, LineParseResult::PartialMatch)),
+        let (input, lang) = match opt(preceded(
+            tag::<&str, &'a [u8], nom::error::Error<&'a [u8]>>("+"),
+            take_while(is_alphanumeric),
+        ))(input) {
+            Ok(res) => res,
+            Err(_) => return Ok((i, LineParseResult::PartialMatch)),
         };
-        let properties = properties(body).map_err(|err| match err {
-            nom::Err::Failure(err) | nom::Err::Error(err) => {
-                nom::Err::Failure(LineParseError::InvalidMatch(err.input))
+
+        let mut pos = 0;
+        let mut in_quote: Option<&[u8]> = None;
+        let end_bytes = end.as_bytes();
+
+        while pos < input.len() {
+            if let Some(q) = in_quote {
+                if input[pos..].starts_with(q) {
+                    in_quote = None;
+                    pos += q.len();
+                } else {
+                    pos += 1;
+                }
+            } else {
+                if input[pos..].starts_with(b"|||") {
+                    in_quote = Some(b"|||");
+                    pos += 3;
+                } else if input[pos..].starts_with(b"'") {
+                    in_quote = Some(b"'");
+                    pos += 1;
+                } else if input[pos..].starts_with(b"\"") {
+                    in_quote = Some(b"\"");
+                    pos += 1;
+                } else if input[pos..].starts_with(end_bytes) {
+                    let body = &input[..pos];
+                    let rest = &input[pos + end_bytes.len()..];
+                    let (_, props) = properties(body).map_err(|err| match err {
+                        nom::Err::Failure(err) | nom::Err::Error(err) => {
+                            nom::Err::Failure(LineParseError::InvalidMatch(err.input))
+                        }
+                        _ => panic!("unreachable"),
+                    })?;
+                    return Ok((
+                        rest,
+                        LineParseResult::Matched(ScanResult::Properties((lang, props))),
+                    ));
+                } else {
+                    pos += 1;
+                }
             }
-            _ => panic!("unreachable when dealing with complete bytes"),
-        })?;
-        Ok((
-            input,
-            LineParseResult::Matched(ScanResult::Properties((lang, properties.1))),
-        ))
+        }
+        Ok((input, LineParseResult::PartialMatch))
     }
 }
 
