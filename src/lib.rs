@@ -49,6 +49,7 @@ impl<'a> Document<'a> {
         let mut next = scanner.scan(&mut parser);
         let properties = PropertiesCollection {
             global: Properties {
+                mode: Some(TangleMode::Append),
                 ..Default::default()
             },
             languages: HashMap::new(),
@@ -185,11 +186,15 @@ impl<'a> Document<'a> {
                 Err(err) => return Err(DocumentError::InvalidMatch(err)),
             }
         }
-        section_frame[section.part.level]
-            .as_mut()
-            .unwrap()
-            .children
-            .push(section);
+        if let Some(frame) = section_frame[section.part.level].as_mut() {
+            frame.children.push(section);
+        } else {
+            return Ok(Document {
+                code_blocks: blocks,
+                ids,
+                root: section,
+            });
+        }
         for idx in (0..10).rev() {
             if section_frame[idx].is_some() {
                 let mut child = None;
@@ -751,5 +756,30 @@ Ignore all this fluff";
                 .properties
                 .filename
         );
+    }
+
+    #[test]
+    fn test_duplicate_ids() {
+        let parsers = MarkdownParsers {
+            code: code("```", "```"),
+            section: section('#'),
+            betwixt: betwixt(BETWIXT_TOKEN, CLOSE_TOKEN),
+            strict: true,
+        };
+        let markdown = &b"
+```rust myid
+println!(\"first\");
+```
+
+```rust myid
+println!(\"second\");
+```
+";
+        let result = Document::from_contents(&markdown[..], parsers);
+        assert!(result.is_err());
+        match result {
+            Err(DocumentError::DuplicateID(id)) => assert_eq!(id, "myid"),
+            _ => panic!("expected DuplicateID error"),
+        }
     }
 }

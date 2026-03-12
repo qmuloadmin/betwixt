@@ -1,9 +1,10 @@
 use std::fmt::Debug;
 
+use nom::branch::alt;
 use nom::bytes::complete::{tag, take_until, take_while};
-use nom::character::complete::{alpha1, newline, space0};
+use nom::character::complete::{alpha1, space0};
 use nom::character::is_alphanumeric;
-use nom::combinator::opt;
+use nom::combinator::{eof, opt};
 use nom::sequence::tuple;
 use nom::{IResult, InputLength, InputTake, Parser};
 
@@ -55,15 +56,18 @@ pub fn code<'a>(
             tag("\n"),
         ))(i)?;
         let (id, prop_line) = if raw_id.len() > 0 {
-			let line = take_while(is_alphanumeric)(raw_id)?;
-            (Some(line.1), Some(line.0))
+            let (remaining, line) = take_while(is_alphanumeric)(raw_id)?;
+            if remaining.len() > 0 && remaining[0] == b'=' {
+                (None, Some(raw_id))
+            } else {
+                (Some(line), Some(remaining))
+            }
         } else {
             (None, None)
         };
-        let mut terminator = locate_parser_match(tuple((
-            tag(code_end),
-            space0::<&'a [u8], nom::error::Error<&'a [u8]>>,
-            newline,
+        let mut terminator = locate_parser_match(alt((
+            tuple((tag(code_end), space0::<&'a [u8], nom::error::Error<&'a [u8]>>, tag("\n"))),
+            tuple((tag(code_end), space0::<&'a [u8], nom::error::Error<&'a [u8]>>, eof)),
         )));
         let end_idx = match terminator(input) {
             Some(result) => result,

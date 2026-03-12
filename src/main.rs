@@ -79,7 +79,7 @@ struct Cli {
     #[arg(long = "flavor", default_value_t = Flavor::Github)]
     /// The markdown flavor to use for parsing (usually ignore this)
     flavor: Flavor,
-    #[arg(short = 'e')]
+    #[arg(short = 'e', value_delimiter = ',')]
     /// A list of block IDs that should be executed in addition to being tangled
     execute: Option<Vec<String>>,
     /// The mode of operation of betwixt
@@ -194,6 +194,7 @@ fn tangle(cli: Cli) -> Result<()> {
                                 let mut path = out_dir.clone();
                                 path.push(from_utf8(filename).unwrap());
                                 OpenOptions::new()
+                                    .create(true)
                                     .write(true)
                                     .append(true)
                                     .open(path)
