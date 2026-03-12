@@ -13,6 +13,7 @@ use crate::LineParseError;
 
 use super::{LineParseResult, ScanResult};
 
+const ANCHOR_PROP: &'static str = "anchor";
 const FILENAME_PROP: &'static str = "filename";
 const TAG_PROP: &'static str = "tag";
 const CODE_PROP: &'static str = "code";
@@ -24,6 +25,7 @@ const CMD_PROP: &'static str = "cmd";
 
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct Properties<'a> {
+    pub anchor: Option<&'a [u8]>,
     pub filename: Option<&'a [u8]>,
     pub tag: Option<&'a [u8]>,
     pub mode: Option<TangleMode<'a>>,
@@ -69,6 +71,9 @@ impl<'a> Default for TangleMode<'a> {
 
 impl<'a> Properties<'a> {
     pub fn merge(&mut self, parent: &Properties<'a>) {
+        if self.anchor.is_none() {
+            self.anchor = parent.anchor;
+        }
         if self.filename.is_none() {
             self.filename = parent.filename;
         }
@@ -160,12 +165,13 @@ fn bool_property<'a>(t: &'static str) -> impl Fn(&[u8]) -> IResult<&[u8], bool> 
 // all have matched or all remaining fail. Returns None for any unmatches parsers
 // TODO make this a macro cause this is silly.
 fn opt_permutation<P, PBOOL, I, O, OBOOL, E>(
-    mut parsers: (P, P, P, P, P, P, P, PBOOL),
+    mut parsers: (P, P, P, P, P, P, P, P, PBOOL),
 ) -> impl FnMut(
     I,
 ) -> IResult<
     I,
     (
+        Option<O>,
         Option<O>,
         Option<O>,
         Option<O>,
@@ -185,7 +191,7 @@ where
 {
     move |i: I| {
         let mut success = true;
-        let mut results = (None, None, None, None, None, None, None, None);
+        let mut results = (None, None, None, None, None, None, None, None, None);
         let mut input = i;
         while success {
             success = false;
@@ -245,6 +251,13 @@ where
                     input = i;
                 }
             }
+            if results.8.is_none() {
+                if let Ok((i, output)) = parsers.8.parse(input.clone()) {
+                    results.8 = Some(output);
+                    success = true;
+                    input = i;
+                }
+            }
         }
         Ok((input, results))
     }
@@ -259,12 +272,15 @@ pub fn properties<'a>(i: &'a [u8]) -> IResult<&'a [u8], Properties> {
     let prefix = property(PREFIX_PROP);
     let postfix = property(POSTFIX_PROP);
     let cmd = property(CMD_PROP);
-    let (input, (filename, cmd, prefix, postfix, tag, mode, code, ignore)) = all_consuming(
-        opt_permutation((fname, cmd, prefix, postfix, tag, mode, code, ignore)),
-    )(i)?;
+    let anchor = property(ANCHOR_PROP);
+    let (input, (filename, cmd, prefix, postfix, tag, mode, code, anchor, ignore)) =
+        all_consuming(opt_permutation((
+            fname, cmd, prefix, postfix, tag, mode, code, anchor, ignore,
+        )))(i)?;
     Ok((
         input,
         Properties {
+            anchor,
             filename,
             tag,
             prefix,

@@ -62,6 +62,10 @@ fn test_tag_filtering() {
         .output()
         .expect("failed to execute process");
 
+    if !output.status.success() {
+        eprintln!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+        eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(output.status.success());
     
     let foo_txt = out_dir.join("foo.txt");
@@ -79,6 +83,10 @@ fn test_tag_filtering() {
         .output()
         .expect("failed to execute process");
 
+    if !output.status.success() {
+        eprintln!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+        eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(output.status.success());
     assert!(bar_txt.exists());
 
@@ -175,12 +183,103 @@ fn test_prefix_postfix() {
         .output()
         .expect("failed to execute process");
 
+    if !output.status.success() {
+        eprintln!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+        eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    }
     assert!(output.status.success());
     
     let wrapped_txt = out_dir.join("wrapped.txt");
     assert!(wrapped_txt.exists());
     let content = fs::read_to_string(wrapped_txt).unwrap();
     assert_eq!(content, "<start>Middle\n<end>");
+
+    fs::remove_dir_all(&out_dir).unwrap();
+}
+
+#[test]
+fn test_anchors() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let exe = root.join("target/debug/betwixt");
+    let input = root.join("tests/examples/anchors.md");
+    let out_dir = root.join("tests/tmp/anchors");
+
+    if out_dir.exists() {
+        fs::remove_dir_all(&out_dir).unwrap();
+    }
+    fs::create_dir_all(&out_dir).unwrap();
+
+    // Create a file with anchors first
+    let initial_content = "
+fn main() {
+    // <?btxt anchor=\"foo\" ?>
+    // ?>
+    // <?btxt anchor=\"bar\" ?>
+    OLD BAR
+    // ?>
+}
+";
+    let target_path = out_dir.join("anchored.rs");
+    fs::write(&target_path, initial_content).unwrap();
+
+    let output = Command::new(&exe)
+        .arg(&input)
+        .arg("-o")
+        .arg(&out_dir)
+        .output()
+        .expect("failed to execute process");
+
+    if !output.status.success() {
+        eprintln!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+        eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    assert!(output.status.success());
+    
+    let content = fs::read_to_string(target_path).unwrap();
+    assert!(content.contains("println!(\"Hello Anchor!\");"));
+    assert!(content.contains("println!(\"Hello Bar!\");"));
+    assert!(content.contains("println!(\"Hello Bar Again!\");"));
+    assert!(!content.contains("OLD BAR"));
+
+    fs::remove_dir_all(&out_dir).unwrap();
+}
+
+#[test]
+fn test_sequence_with_anchors() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let exe = root.join("target/debug/betwixt");
+    let input = root.join("tests/examples/sequence.md");
+    let out_dir = root.join("tests/tmp/sequence");
+
+    if out_dir.exists() {
+        fs::remove_dir_all(&out_dir).unwrap();
+    }
+    fs::create_dir_all(&out_dir).unwrap();
+
+    let output = Command::new(&exe)
+        .arg(&input)
+        .arg("-o")
+        .arg(&out_dir)
+        .output()
+        .expect("failed to execute process");
+
+    if !output.status.success() {
+        eprintln!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+        eprintln!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    assert!(output.status.success());
+    
+    let content = fs::read_to_string(out_dir.join("seq.rs")).unwrap();
+    assert!(content.contains("println!(\"Start\");"));
+    assert!(content.contains("println!(\"Middle\");"));
+    assert!(content.contains("println!(\"End\");"));
+    
+    // Check order
+    let start_pos = content.find("Start").unwrap();
+    let middle_pos = content.find("Middle").unwrap();
+    let end_pos = content.find("End").unwrap();
+    assert!(start_pos < middle_pos);
+    assert!(middle_pos < end_pos);
 
     fs::remove_dir_all(&out_dir).unwrap();
 }

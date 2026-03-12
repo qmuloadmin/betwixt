@@ -1,10 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fmt::Display;
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::BufReader;
 use std::io::Read;
-use std::io::Write;
 use std::path::PathBuf;
 use std::process;
 use std::str::from_utf8;
@@ -116,6 +115,39 @@ fn execute(block: &Code, exec_ids: &HashSet<String>) -> Result<Option<String>> {
     }
 }
 
+fn substitute_anchors(buffer: &mut Vec<u8>, anchor_updates: &HashMap<String, Vec<u8>>) {
+    // We iterate backwards to avoid index shifts affecting subsequent replacements
+    // Simple but potentially slow approach: search for anchors repeatedly.
+    // For now, let's keep it simple.
+    for (anchor_name, content) in anchor_updates {
+        let start_tag = format!("{} anchor=\"{}\" {}", BETWIXT_TOKEN, anchor_name, CLOSE_TOKEN);
+        let start_tag = start_tag.as_bytes();
+        let end_tag = CLOSE_TOKEN.as_bytes();
+
+        let mut pos = 0;
+        while let Some(start_idx) = buffer[pos..]
+            .windows(start_tag.len())
+            .position(|w| w == start_tag)
+        {
+            let start_idx = pos + start_idx;
+            let after_start = start_idx + start_tag.len();
+            if let Some(end_idx) = buffer[after_start..]
+                .windows(end_tag.len())
+                .position(|w| w == end_tag)
+            {
+                let end_idx = after_start + end_idx;
+                buffer.splice(after_start..end_idx, content.clone());
+                pos = after_start + content.len() + end_tag.len();
+            } else {
+                break;
+            }
+            if pos >= buffer.len() {
+                break;
+            }
+        }
+    }
+}
+
 fn tangle(cli: Cli) -> Result<()> {
     let exec_ids = match cli.execute {
         Some(ids) => ids.into_iter().collect(),
@@ -131,9 +163,9 @@ fn tangle(cli: Cli) -> Result<()> {
             out_dir.to_string_lossy()
         ));
     };
-    let file = File::open(cli.file).context("unable to open input file")?;
-    std::env::set_current_dir(&out_dir).context("unable to change to output directory")?;
-
+    let file = File::open(&cli.file).context("unable to open input file")?;
+    // Don't change directory yet, wait until we're processing files
+    
     let mut reader = BufReader::new(file);
     let mut bytes = Vec::new();
     reader
@@ -156,6 +188,9 @@ fn tangle(cli: Cli) -> Result<()> {
     };
     let markdown =
         Document::from_contents(&bytes[..], parsers).context("strict mode: failed to parse")?;
+    
+    std::env::set_current_dir(&out_dir).context("unable to change to output directory")?;
+    
     match cli.mode {
         Mode::Describe => {
             let output = markdown
@@ -164,6 +199,7 @@ fn tangle(cli: Cli) -> Result<()> {
             println!("{}", output);
         }
         Mode::Tangle => {
+            let mut file_blocks: HashMap<String, Vec<&Code>> = HashMap::new();
             for block in markdown.code_blocks.iter() {
                 if let Some(filter) = cli.tag.as_ref() {
                     match block.properties.tag {
@@ -175,69 +211,92 @@ fn tangle(cli: Cli) -> Result<()> {
                         None => continue,
                     }
                 }
-                // FIXME don't repeatedly open and write files. Do it once. This is easier for now
-                // FIXME don't just use utf8 blindly on filenames
-                if let Some(mode) = &block.properties.mode {
-                    if let Some(filename) = block.properties.filename {
-                        let mut file = match mode {
-                            TangleMode::Overwrite => {
-                                let mut path = out_dir.clone();
-                                path.push(from_utf8(filename).unwrap());
-                                OpenOptions::new()
-                                    .create(true)
-                                    .write(true)
-                                    .truncate(true)
-                                    .open(path)
-                                    .unwrap()
-                            }
-                            TangleMode::Append => {
-                                let mut path = out_dir.clone();
-                                path.push(from_utf8(filename).unwrap());
-                                OpenOptions::new()
-                                    .create(true)
-                                    .write(true)
-                                    .append(true)
-                                    .open(path)
-                                    .unwrap()
-                            }
-                            TangleMode::Prepend => {
-                                panic!("prepend mode is unimplemented");
-                            }
-                            TangleMode::Insert(_) => {
-                                panic!("insert mode is unimplemented");
-                            }
-                        };
-                        if let Some(prefix) = block.properties.prefix {
-                            file.write_all(prefix)
-                                .context("failed to write prefix for code block to file")?;
+                if let Some(filename) = block.properties.filename {
+                    let filename = from_utf8(filename).unwrap().to_owned();
+                    file_blocks.entry(filename).or_default().push(block);
+                } else if !cli.no_strict {
+                    return Err(anyhow!(
+                        "code block without filename found, strict mode enforced"
+                    ));
+                }
+            }
+
+            for (filename, blocks) in file_blocks {
+                let mut path = out_dir.clone();
+                path.push(&filename);
+                
+                let mut buffer = Vec::new();
+                let mut anchor_updates: HashMap<String, Vec<u8>> = HashMap::new();
+
+                // Determine initial state from the first block
+                let mut first = true;
+                for block in blocks {
+                    let mode = block.properties.mode.as_ref().unwrap_or(&TangleMode::Append);
+                    let anchor = block.properties.anchor.map(|a| from_utf8(a).unwrap().to_owned());
+
+                    if first {
+                        if matches!(mode, TangleMode::Overwrite) && anchor.is_none() {
+                            // Start with empty buffer
+                        } else if path.exists() {
+                            buffer = fs::read(&path).context(format!("failed to read existing file {}", filename))?;
                         }
-                        file.write_all(block.part.contents)
-                            .context("failed to write code block to file")?;
-                        if let Some(postfix) = block.properties.postfix {
-                            file.write_all(postfix)
-                                .context("failed to write postfix for code block to file")?;
-                        }
-                        // If execute was set, and the IDs provided match this block's ID, then execute this block's cmd
-                        match execute(block, &exec_ids)? {
-                            Some(output) => print!("{}", output),
-                            None => (),
-                        }
-                    } else {
-                        if !cli.no_strict {
-                            return Err(anyhow!(
-                                "code block without filename found, strict mode enforced"
-                            ));
-                        }
-                        continue;
+                        first = false;
                     }
-                } else {
-                    if !cli.no_strict {
-                        return Err(anyhow!(
-                            "code block without mode found, strict mode enforced"
-                        ));
+
+                    let mut content = Vec::new();
+                    if let Some(prefix) = block.properties.prefix {
+                        content.extend_from_slice(prefix);
                     }
-                    continue;
-                };
+                    content.extend_from_slice(block.part.contents);
+                    if let Some(postfix) = block.properties.postfix {
+                        content.extend_from_slice(postfix);
+                    }
+
+                    match anchor {
+                        None => {
+                            match mode {
+                                TangleMode::Overwrite => {
+                                    buffer = content;
+                                    anchor_updates.clear();
+                                }
+                                TangleMode::Append => {
+                                    buffer.extend_from_slice(&content);
+                                }
+                                TangleMode::Prepend => {
+                                    let mut new_buffer = content;
+                                    new_buffer.extend_from_slice(&buffer);
+                                    buffer = new_buffer;
+                                }
+                                TangleMode::Insert(_) => panic!("legacy insert mode not supported in new flow"),
+                            }
+                        }
+                        Some(name) => {
+                            match mode {
+                                TangleMode::Overwrite => {
+                                    anchor_updates.insert(name, content);
+                                }
+                                TangleMode::Append => {
+                                    anchor_updates.entry(name).or_default().extend_from_slice(&content);
+                                }
+                                _ => return Err(anyhow!("only overwrite and append modes are supported for anchors")),
+                            }
+                        }
+                    }
+
+                    // Execute if requested
+                    // Before executing, we must ensure the file is written so it can be used as a dependency
+                    let mut exec_buffer = buffer.clone();
+                    substitute_anchors(&mut exec_buffer, &anchor_updates);
+                    fs::write(&path, exec_buffer).context(format!("failed to write intermediate file {}", filename))?;
+
+                    match execute(block, &exec_ids)? {
+                        Some(output) => print!("{}", output),
+                        None => (),
+                    }
+                }
+
+                substitute_anchors(&mut buffer, &anchor_updates);
+                fs::write(&path, buffer).context(format!("failed to write to file {}", filename))?;
             }
         }
     };
