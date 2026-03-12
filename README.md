@@ -56,6 +56,7 @@ Currently, you can set the following properties in a betwixt block:
   - Note that cmd must not contain arguments with spaces (e.g. a filename with spaces in it) as no attempt to escape spaces is respected. You may have multiple commands with `&&`
  - `prefix` sets a code block to be written to file _before_ contents in visible code blocks are written. This is good for hiding boilerplate.
  - `postfix` sets a code block to be written to file _after_ contents in visible code blocks are written.
+ - `anchor` targets a code block to a specific region in a file. If set, `mode` applies to the content between `<?btxt anchor="name" ?>` and the following `?>` in the target file.
  
  While it is not treated as a normal property, you can also set a `code` property in a betwixt block. This is never inherited, and it is effectively treated as a code block for tangle operations. The difference is that it isn't visible in the rendered markdown -- this is useful for internal plumbing or boilerplate you don't want the end users seeing.
  
@@ -139,6 +140,24 @@ fmt.Println("Hello, Betwixt!")
 
 <?btxt+go code='}' ?>
 
+#### Anchored Code Example
+
+You can also tangle code into specific "anchors" in a file. This is useful for inserting code into existing boilerplate or template files.
+
+<?btxt+rust filename='main.rs' mode='overwrite' code=|||fn main() {
+    println!("Start");
+    // <!!btxt anchor="dynamic" !!>
+    // !!>
+    println!("End");
+}
+||| ?>
+
+```rust anchor='dynamic' filename='main.rs' mode='append'
+    println!("Middle");
+```
+
+In the example above, the `println!("Middle");` block will be inserted into the `dynamic` anchor within `main.rs`. (Note: in actual usage, use `?` instead of `!!` in the anchor tags). 
+
 #### Executing Code Example
 
 Code can be executed by using the `-e` flag and providing a comma-separated list of IDs. These IDs must align with the ID of a code block included in the tangled blocks (e.g. must not be excluded in a tag that was filtered out). 
@@ -178,7 +197,7 @@ Ultimately, I want betwixt to have the following features before I will consider
  - [x] Clear and helpful error messages with line numbers
  - [ ] Unicode-aware parsing instead of bytes with support for several encodings
  - [ ] Simple test runner to create temp directories, execute commands, output success or failure, and cleanup
- - [ ] Insert mode to insert code blocks into a specific point in an existing file
+ - [x] Insert mode to insert code blocks into a specific point in an existing file
  - [ ] More Markdown flavors and Org Mode syntax support
  - [ ] Support tangling from multiple markdown documents in a heirarchy (e.g. an Obsidian vault)
  - [x] The ability to execute code blocks by tag or id 
