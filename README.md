@@ -156,7 +156,7 @@ You can also tangle code into specific "anchors" in a file. This is useful for i
     println!("Middle");
 ```
 
-In the example above, the `println!("Middle");` block will be inserted into the `dynamic` anchor within `main.rs`. (Note: in actual usage, use `?` instead of `!!` in the anchor tags). 
+In the example above, the `println!("Middle");` block will be inserted into the `dynamic` anchor within `main.rs`.
 
 #### Executing Code Example
 
