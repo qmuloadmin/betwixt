@@ -6,8 +6,8 @@ This test ensures that if we append an anchor in one block, we can fill it in a 
 ```rust
 fn main() {
     println!("Start");
-    // <btxt anchor="dynamic"
-    // btxt>
+    // @btxt anchor="dynamic"
+    // btxt@
     println!("End");
 }
 ```

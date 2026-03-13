@@ -27,8 +27,8 @@ use crate::properties::Properties;
 pub const BETWIXT_TOKEN: &str = "<?btxt";
 pub const BETWIXT_COM_TOKEN: &str = "<!--btxt";
 // This token is for starting betwixt block in source code (not markdown)
-pub const BETWIXT_CODE_TOKEN: &str = "<btxt";
-pub const CLOSE_CODE_TOKEN: &str = "btxt>";
+pub const BETWIXT_CODE_TOKEN: &str = "@btxt";
+pub const CLOSE_CODE_TOKEN: &str = "btxt@";
 pub const CLOSE_TOKEN: &str = "?>";
 pub const CLOSE_COM_TOKEN: &str = "-->";
 

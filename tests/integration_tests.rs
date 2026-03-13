@@ -212,11 +212,11 @@ fn test_anchors() {
     // Create a file with anchors first
     let initial_content = "
 fn main() {
-    // <btxt anchor=\"foo\"
-    // btxt>
-    // <btxt anchor=\"bar\"
+    // @btxt anchor=\"foo\"
+    // btxt@
+    // @btxt anchor=\"bar\"
     OLD BAR
-    // btxt>
+    // btxt@
 }
 ";
     let target_path = out_dir.join("anchored.rs");
