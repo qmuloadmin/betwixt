@@ -146,8 +146,8 @@ You can also tangle code into specific "anchors" in a file. This is useful for i
 
 <?btxt+rust filename='main.rs' mode='overwrite' code=|||fn main() {
     println!("Start");
-    // <!!btxt anchor="dynamic" !!>
-    // !!>
+    // <btxt anchor="dynamic" 
+    // btxt>
     println!("End");
 }
 ||| ?>

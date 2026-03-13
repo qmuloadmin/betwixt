@@ -11,7 +11,7 @@ use std::str::from_utf8;
 use anyhow::{anyhow, Context, Result};
 use betwixt_parse::TangleMode;
 use betwixt_parse::{
-    betwixt, code, section, Code, Document, MarkdownParsers, BETWIXT_TOKEN, CLOSE_TOKEN,
+    betwixt, code, section, Code, Document, MarkdownParsers, BETWIXT_TOKEN, CLOSE_TOKEN, BETWIXT_CODE_TOKEN, CLOSE_CODE_TOKEN
 };
 use clap::{Parser, ValueEnum};
 
@@ -120,9 +120,9 @@ fn substitute_anchors(buffer: &mut Vec<u8>, anchor_updates: &HashMap<String, Vec
     // Simple but potentially slow approach: search for anchors repeatedly.
     // For now, let's keep it simple.
     for (anchor_name, content) in anchor_updates {
-        let start_tag = format!("{} anchor=\"{}\" {}", BETWIXT_TOKEN, anchor_name, CLOSE_TOKEN);
+        let start_tag = format!("{} anchor=\"{}\"", BETWIXT_CODE_TOKEN, anchor_name);
         let start_tag = start_tag.as_bytes();
-        let end_tag = CLOSE_TOKEN.as_bytes();
+        let end_tag = CLOSE_CODE_TOKEN.as_bytes();
 
         let mut pos = 0;
         while let Some(start_idx) = buffer[pos..]
@@ -267,7 +267,6 @@ fn tangle(cli: Cli) -> Result<()> {
                                     new_buffer.extend_from_slice(&buffer);
                                     buffer = new_buffer;
                                 }
-                                TangleMode::Insert(_) => panic!("legacy insert mode not supported in new flow"),
                             }
                         }
                         Some(name) => {

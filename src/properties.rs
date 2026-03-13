@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use nom::branch::alt;
-use nom::bytes::complete::{tag, take_until, take_until1, take_while};
+use nom::bytes::complete::{tag, take_until, take_while};
 use nom::character::complete::space0;
 use nom::character::{is_alphanumeric, is_newline, is_space};
 use nom::combinator::{all_consuming, map, opt};
@@ -28,7 +28,7 @@ pub struct Properties<'a> {
     pub anchor: Option<&'a [u8]>,
     pub filename: Option<&'a [u8]>,
     pub tag: Option<&'a [u8]>,
-    pub mode: Option<TangleMode<'a>>,
+    pub mode: Option<TangleMode>,
     pub ignore: Option<bool>,
     pub prefix: Option<&'a [u8]>,
     pub postfix: Option<&'a [u8]>,
@@ -40,30 +40,22 @@ pub struct Properties<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TangleMode<'a> {
+pub enum TangleMode {
     Overwrite,
     Append,
     Prepend,
-    Insert(&'a [u8]),
 }
 
-impl<'a> TangleMode<'a> {
+impl TangleMode {
     pub fn from_bytes(b: &[u8]) -> IResult<&[u8], TangleMode> {
         let overwrite = map(tag("overwrite"), |_| TangleMode::Overwrite);
         let append = map(tag("append"), |_| TangleMode::Append);
         let prepend = map(tag("prepend"), |_| TangleMode::Prepend);
-        let insert = map(
-            pair(
-                tag("insert"),
-                delimited(tag("["), take_until1("]"), tag("]")),
-            ),
-            |(_, s)| TangleMode::Insert(s),
-        );
-        all_consuming(alt((overwrite, append, prepend, insert)))(b)
+        all_consuming(alt((overwrite, append, prepend)))(b)
     }
 }
 
-impl<'a> Default for TangleMode<'a> {
+impl Default for TangleMode {
     fn default() -> Self {
         Self::Append
     }
@@ -263,7 +255,7 @@ where
     }
 }
 
-pub fn properties<'a>(i: &'a [u8]) -> IResult<&'a [u8], Properties> {
+pub fn properties<'a>(i: &'a [u8]) -> IResult<&'a [u8], Properties<'a>> {
     let fname = property(FILENAME_PROP);
     let tag = property(TAG_PROP);
     let mode = property(TANGLE_MODE_PROP);

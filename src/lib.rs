@@ -1,3 +1,4 @@
+use std::array::from_ref;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt::{Debug, Display};
@@ -22,10 +23,14 @@ use section::*;
 
 use crate::properties::Properties;
 
-pub const BETWIXT_TOKEN: &'static str = "<?btxt";
-pub const BETWIXT_COM_TOKEN: &'static str = "<!--btxt";
-pub const CLOSE_TOKEN: &'static str = "?>";
-pub const CLOSE_COM_TOKEN: &'static str = "-->";
+// this token is for starting betwixt blocks in markdown (not source code)
+pub const BETWIXT_TOKEN: &str = "<?btxt";
+pub const BETWIXT_COM_TOKEN: &str = "<!--btxt";
+// This token is for starting betwixt block in source code (not markdown)
+pub const BETWIXT_CODE_TOKEN: &str = "<btxt";
+pub const CLOSE_CODE_TOKEN: &str = "btxt>";
+pub const CLOSE_TOKEN: &str = "?>";
+pub const CLOSE_COM_TOKEN: &str = "-->";
 
 pub struct Document<'a> {
     pub code_blocks: Vec<Code<'a>>,
@@ -232,7 +237,7 @@ impl<'a> Document<'a> {
         ));
         for &idx in section.code_block_indexes.iter() {
             sections.push(format!(
-                "{} {} {} {} {} {} {}\n",
+                "{} {} {} {} {} {}{} the file {}\n",
                 padding,
                 match self.code_blocks[idx].properties.cmd {
                     None => "-",
@@ -256,8 +261,11 @@ impl<'a> Document<'a> {
                         TangleMode::Overwrite => "overwrites",
                         TangleMode::Append => "appends to",
                         TangleMode::Prepend => "prepends to",
-                        TangleMode::Insert(_) => "inserts into",
                     },
+                },
+                match &self.code_blocks[idx].properties.anchor {
+                    None => "".to_owned(),
+                    Some(anchor) => format!(" the achor block with name '{}' in", from_utf8(anchor)?)
                 },
                 match self.code_blocks[idx].properties.filename {
                     None => "**No Filename**",
@@ -621,16 +629,6 @@ And this isn't code anymore
             matches!(parsed.unwrap().1, TangleMode::Prepend),
             "parsing 'prepend' should yield Prepend mode"
         );
-        let insert = &b"insert[<<>> INSERT HERE <<>>]";
-        let parsed = TangleMode::from_bytes(&insert[..]);
-        assert!(
-            parsed.is_ok(),
-            "parsing valid string 'insert[<<>> INSERT HERE <<>>] should succeed"
-        );
-        assert!(matches!(
-            parsed.unwrap().1,
-            TangleMode::Insert(b"<<>> INSERT HERE <<>>")
-        ));
         let excess = &b"appends";
         let parsed = TangleMode::from_bytes(&excess[..]);
         assert!(
